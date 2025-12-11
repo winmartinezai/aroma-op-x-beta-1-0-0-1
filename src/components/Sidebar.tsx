@@ -34,7 +34,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, collapsed,
   return (
     <>
       <div
-        className={`relative z-20 flex h-full shrink-0 flex-col border-r border-white/5 bg-slate-900/90 backdrop-blur-md transition-all duration-300 ${collapsed ? 'w-20' : 'w-60'}`}
+        className={`relative z-20 flex h-full shrink-0 flex-col border-r border-white/5 bg-slate-900/90 backdrop-blur-md transition-all duration-300 ${collapsed ? 'w-20' : 'w-72'}`}
       >
         {/* Top Logo Area */}
         <div className="flex h-20 shrink-0 items-center justify-center gap-3 border-b border-white/5 px-4">
