@@ -67,7 +67,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const jobsNeedingUpdate = jobs.filter(j => !j.jobNumber || j.jobNumber < 100000);
 
         if (jobsNeedingUpdate.length > 0) {
-          console.log(`🔧 MIGRATION: Found ${ jobsNeedingUpdate.length } jobs with old / missing IDs.Reassigning to 100xxx...`);
           let currentMax = jobs.reduce((max, j) => (j.jobNumber && j.jobNumber >= 100000) ? Math.max(max, j.jobNumber) : max, 100100);
           const idsToUpdate = new Set(jobsNeedingUpdate.map(j => j.id));
           jobsNeedingUpdate.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
