@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jobs Master Undo Module</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-100 p-8 min-h-screen">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useMemo, useEffect, useRef } = React;
+
+        // --- ICONS ---
+        const Icons = {
+            History: () => <i data-lucide="history" className="w-4 h-4"></i>,
+            Undo2: () => <i data-lucide="undo-2" className="w-3 h-3"></i>,
+            Briefcase: () => <i data-lucide="briefcase" className="w-4 h-4"></i>,
+            DollarSign: () => <i data-lucide="dollar-sign" className="w-4 h-4"></i>,
+            CheckCircle2: () => <i data-lucide="check-circle-2" className="w-4 h-4"></i>,
+            Trash2: () => <i data-lucide="trash-2" className="w-4 h-4"></i>,
+            Plus: () => <i data-lucide="plus" className="w-4 h-4"></i>,
+            Lock: () => <i data-lucide="lock" className="w-3 h-3"></i>,
+            Unlock: () => <i data-lucide="unlock" className="w-3 h-3"></i>,
+            RefreshCw: () => <i data-lucide="refresh-cw" className="w-3 h-3"></i>
+        };
+
+        // --- HELPER FUNCTIONS ---
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        const formatTime = (timestamp) => new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+        // --- JOBS MASTER HISTORY WIDGET ---
+        // This is the specific module requested by the user
+        const JobsHistoryWidget = ({ history, onUndo }) => {
+            const [limit, setLimit] = useState(25);
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [history, limit]);
+
+            const visibleHistory = history.slice(0, limit);
+
+            return (
+                <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden w-full max-w-sm h-fit">
+                    {/* Header - Specific to Jobs Master */}
+                    <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex justify-between items-center shrink-0">
+                        <h4 className="font-bold text-slate-700 flex items-center gap-2 text-sm">
+                            <span className="text-blue-500"><Icons.History /></span>
+                            Jobs Master History
+                        </h4>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded">
+                                {visibleHistory.length} / {limit}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* Scrollable List - Compact View (~5 items) */}
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-0 max-h-[320px] min-h-[100px]">
+                        {visibleHistory.length === 0 ? (
+                            <div className="text-center text-slate-400 p-8 italic text-sm">
+                                No job changes recorded.
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-slate-100">
+                                {visibleHistory.map(action => (
+                                    <div key={action.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 group transition-colors">
+                                        {/* Icon based on action type */}
+                                        <div className={`p-2 rounded-lg border border-transparent transition-all shrink-0 ${action.type === 'CREATE' ? 'bg-blue-50 text-blue-600' :
+                                                action.type === 'UPDATE_STATUS' ? 'bg-emerald-50 text-emerald-600' :
+                                                    action.type === 'UPDATE_PRICE' ? 'bg-amber-50 text-amber-600' :
+                                                        'bg-red-50 text-red-600'
+                                            }`}>
+                                            {action.type === 'CREATE' && <Icons.Plus />}
+                                            {action.type === 'UPDATE_STATUS' && <Icons.CheckCircle2 />}
+                                            {action.type === 'UPDATE_PRICE' && <Icons.DollarSign />}
+                                            {action.type === 'DELETE' && <Icons.Trash2 />}
+                                        </div>
+
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-xs font-bold text-slate-700 truncate">{action.description}</p>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-[10px] text-slate-400 font-mono bg-slate-100 px-1 rounded">
+                                                    {formatTime(action.timestamp)}
+                                                </span>
+                                                <span className="text-[10px] text-slate-400 font-medium lowercase">
+                                                    {action.user || 'System'}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                                            <button
+                                                onClick={() => onUndo(action)}
+                                                className="flex items-center gap-1 px-2 py-1 bg-slate-800 text-white rounded text-[10px] font-bold hover:bg-slate-700 transition-colors shadow-sm"
+                                                title="Revert this job change"
+                                            >
+                                                <Icons.Undo2 />
+                                                Undo
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Footer / Controls */}
+                    <div className="p-2 border-t border-slate-100 bg-slate-50/50">
+                        {limit < 50 ? (
+                            <button
+                                onClick={() => setLimit(50)}
+                                className="w-full flex items-center justify-center gap-2 py-2 text-xs font-bold text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-dashed border-slate-300 hover:border-blue-200"
+                            >
+                                <Icons.Lock />
+                                Unlock older history (50)
+                            </button>
+                        ) : (
+                            <div className="text-center py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-center gap-1">
+                                <Icons.Unlock />
+                                Max history unlocked
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- MAIN APP (DEMO) ---
+        const App = () => {
+            // Initial Mock Jobs
+            const [jobs, setJobs] = useState([
+                { id: '101', title: 'Paint Living Room', price: 450, status: 'Pending' },
+                { id: '102', title: 'Fix Plumbing', price: 120, status: 'Completed' },
+                { id: '103', title: 'Install Fan', price: 85, status: 'Pending' },
+            ]);
+
+            // History State
+            const [history, setHistory] = useState([]);
+
+            // Helper to add to history
+            const addToHistory = (type, description, previousData, jobId) => {
+                const newAction = {
+                    id: generateId(),
+                    timestamp: Date.now(),
+                    type,
+                    description,
+                    previousData, // Store snapshot of data BEFORE change for undo
+                    jobId,
+                    user: 'You'
+                };
+                setHistory(prev => [newAction, ...prev]);
+            };
+
+            // Actions
+            const addJob = () => {
+                const newJob = { id: generateId(), title: `New Job ${Math.floor(Math.random() * 100)}`, price: 0, status: 'Pending' };
+                setJobs(prev => [newJob, ...prev]);
+                addToHistory('CREATE', `Created ${newJob.title}`, null, newJob.id);
+            };
+
+            const updatePrice = (id) => {
+                const job = jobs.find(j => j.id === id);
+                if (!job) return;
+                const oldPrice = job.price;
+                const newPrice = oldPrice + 50;
+
+                setJobs(prev => prev.map(j => j.id === id ? { ...j, price: newPrice } : j));
+                addToHistory('UPDATE_PRICE', `Increased price for ${job.title}`, { price: oldPrice }, id);
+            };
+
+            const toggleStatus = (id) => {
+                const job = jobs.find(j => j.id === id);
+                if (!job) return;
+                const oldStatus = job.status;
+                const newStatus = oldStatus === 'Pending' ? 'Completed' : 'Pending';
+
+                setJobs(prev => prev.map(j => j.id === id ? { ...j, status: newStatus } : j));
+                addToHistory('UPDATE_STATUS', `Changed status to ${newStatus}`, { status: oldStatus }, id);
+            };
+
+            const deleteJob = (id) => {
+                const job = jobs.find(j => j.id === id);
+                if (!job) return;
+
+                setJobs(prev => prev.filter(j => j.id !== id));
+                addToHistory('DELETE', `Deleted ${job.title}`, { job: job }, id);
+            };
+
+            // Undo Logic
+            const handleUndo = (action) => {
+                // In a real app, this would be more robust, but for demo:
+                if (action.type === 'CREATE') {
+                    // Undo Create = Delete
+                    setJobs(prev => prev.filter(j => j.id !== action.jobId));
+                } else if (action.type === 'DELETE') {
+                    // Undo Delete = Restore
+                    setJobs(prev => [...prev, action.previousData.job]);
+                } else if (action.type === 'UPDATE_PRICE') {
+                    // Undo Price Change = Restore old price
+                    setJobs(prev => prev.map(j => j.id === action.jobId ? { ...j, price: action.previousData.price } : j));
+                } else if (action.type === 'UPDATE_STATUS') {
+                    // Undo Status Change = Restore old status
+                    setJobs(prev => prev.map(j => j.id === action.jobId ? { ...j, status: action.previousData.status } : j));
+                }
+
+                // Remove the action from history after undoing (or mark as undone)
+                setHistory(prev => prev.filter(h => h.id !== action.id));
+
+                // Optional: Add a "Redo" action or log that undo happened
+                console.log("Undid action:", action.description);
+            };
+
+            useEffect(() => {
+                lucide.createIcons();
+            }, [jobs]);
+
+            return (
+                <div className="flex gap-8 max-w-6xl mx-auto items-start">
+
+                    {/* LEFT: Jobs Master View (Demo) */}
+                    <div className="flex-1 space-y-6">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                                <Icons.Briefcase />
+                                Jobs Master
+                            </h2>
+                            <button onClick={addJob} className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-blue-700 flex items-center gap-2">
+                                <Icons.Plus /> New Job
+                            </button>
+                        </div>
+
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 border-b border-slate-100 text-xs uppercase text-slate-500">
+                                    <tr>
+                                        <th className="px-4 py-3">Job Title</th>
+                                        <th className="px-4 py-3 text-right">Price</th>
+                                        <th className="px-4 py-3 text-center">Status</th>
+                                        <th className="px-4 py-3 text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {jobs.map(job => (
+                                        <tr key={job.id} className="hover:bg-slate-50">
+                                            <td className="px-4 py-3 font-medium text-slate-700">{job.title}</td>
+                                            <td className="px-4 py-3 text-right font-mono">${job.price}</td>
+                                            <td className="px-4 py-3 text-center">
+                                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${job.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                                    }`}>
+                                                    {job.status}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right flex justify-end gap-2">
+                                                <button onClick={() => updatePrice(job.id)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Increase Price">
+                                                    <Icons.DollarSign />
+                                                </button>
+                                                <button onClick={() => toggleStatus(job.id)} className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded" title="Toggle Status">
+                                                    <Icons.RefreshCw />
+                                                </button>
+                                                <button onClick={() => deleteJob(job.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Delete">
+                                                    <Icons.Trash2 />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                            {jobs.length === 0 && (
+                                <div className="p-8 text-center text-slate-400 italic">No jobs found. Add one to start.</div>
+                            )}
+                        </div>
+
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+                            <strong>Instructions:</strong> Use the buttons in the table to modify jobs. Watch the "Jobs Master History" widget on the right update. Click "Undo" in the widget to revert changes.
+                        </div>
+                    </div>
+
+                    {/* RIGHT: The Requested Module */}
+                    <div className="w-80 shrink-0 sticky top-8">
+                        <JobsHistoryWidget history={history} onUndo={handleUndo} />
+                    </div>
+
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>

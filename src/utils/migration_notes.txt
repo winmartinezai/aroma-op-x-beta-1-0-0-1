@@ -1,0 +1,5 @@
+
+// Helper script to migrate existing jobs to have job numbers if they are missing
+// You can run this once or manually trigger it via console
+// For now, we just rely on new jobs getting numbers. 
+// If user needs backfill, we can add a button in settings.

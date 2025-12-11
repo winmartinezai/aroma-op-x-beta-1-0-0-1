@@ -1,0 +1,1629 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aroma Op-x - Full Standalone App</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- SheetJS for Excel Import -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f8fafc;
+            color: #0f172a;
+            font-family: sans-serif;
+        }
+
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="root" class="h-screen w-full flex overflow-hidden"></div>
+
+    <script>
+        window.onerror = function (message, source, lineno, colno, error) {
+            console.error("Global Error:", message, "at", lineno, ":", colno, error);
+        };
+        console.log("Error handler registered");
+    </script>
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useContext, createContext, useCallback } = React;
+        // Helper to convert Lucide icon data (array) to React component
+        const createLucideComponent = (iconData) => {
+            return (props) => {
+                const [tag, attrs, children] = iconData;
+
+                const renderChild = (child, index) => {
+                    if (!Array.isArray(child)) return child; // Handle non-array children (e.g., strings)
+                    const [cTag, cAttrs, cChildren] = child;
+                    return React.createElement(cTag, { ...cAttrs, key: index },
+                        Array.isArray(cChildren) ? cChildren.map(renderChild) : cChildren
+                    );
+                };
+
+                // Handle props
+                const { size, color, strokeWidth, className, ...otherProps } = props;
+                const currentAttrs = attrs || {}; // Ensure attrs is an object
+                const defaultAttrs = {
+                    xmlns: "http://www.w3.org/2000/svg",
+                    width: size || 24,
+                    height: size || 24,
+                    viewBox: "0 0 24 24",
+                    fill: "none",
+                    stroke: color || "currentColor",
+                    strokeWidth: strokeWidth || 2,
+                    strokeLinecap: "round",
+                    strokeLinejoin: "round",
+                    ...currentAttrs,
+                    ...otherProps,
+                    className: [currentAttrs.class, className].filter(Boolean).join(' ')
+                };
+                delete defaultAttrs.class;
+
+                return React.createElement(tag, defaultAttrs,
+                    Array.isArray(children) ? children.map(renderChild) : children
+                );
+            };
+        };
+
+        const lucideIcons = {};
+        if (typeof lucide !== 'undefined') {
+            Object.keys(lucide).forEach(key => {
+                if (Array.isArray(lucide[key])) {
+                    lucideIcons[key] = createLucideComponent(lucide[key]);
+                } else {
+                    lucideIcons[key] = lucide[key];
+                }
+            });
+        }
+
+        const {
+            LayoutDashboard, ClipboardList, Users, Building, Settings, FileText, ChevronLeft, ChevronRight, PaintBucket,
+            Search, Filter, Download, CheckSquare, Square, ArrowUpDown, DollarSign, Trash2, Edit2, Clock, FolderInput,
+            Layers, Eye, AlertTriangle, Briefcase, CheckCircle, Plus, MoreHorizontal, FilePlus, AlertCircle, Hourglass,
+            X, Minus, Maximize2, GripHorizontal, History, CheckCircle2, Save, Calendar, MousePointer2, TrendingUp,
+            Undo2, Edit3, FileMinus, UploadCloud, FileCheck, FileSignature, ArrowLeft, Send
+        } = lucideIcons;
+
+        // --- UTILS ---
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        const formatCurrency = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+        const formatDate = (dateStr) => {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        };
+
+        const getStartOfWeek = (date) => {
+            const d = new Date(date);
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            d.setDate(diff);
+            d.setHours(0, 0, 0, 0);
+            return d;
+        };
+
+        const getEndOfWeek = (date) => {
+            const d = getStartOfWeek(date);
+            d.setDate(d.getDate() + 6);
+            d.setHours(23, 59, 59, 999);
+            return d;
+        };
+
+        const getStartOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
+        const getEndOfMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const formatDateRange = (start, end) => {
+            const sMonth = start.toLocaleDateString('en-US', { month: 'short' });
+            const sDay = start.getDate();
+            const eMonth = end.toLocaleDateString('en-US', { month: 'short' });
+            const eDay = end.getDate();
+            const year = end.getFullYear();
+
+            if (sMonth === eMonth) {
+                return `${sMonth} ${sDay} - ${eDay}, ${year}`;
+            }
+            return `${sMonth} ${sDay} - ${eMonth} ${eDay}, ${year}`;
+        };
+
+        const isWithinRange = (dateStr, range) => {
+            if (!range) return true;
+            const d = new Date(dateStr);
+            d.setHours(0, 0, 0, 0);
+            const start = new Date(range.start);
+            start.setHours(0, 0, 0, 0);
+            const end = new Date(range.end);
+            end.setHours(23, 59, 59, 999);
+            return d >= start && d <= end;
+        };
+
+
+
+        // --- HOOKS ---
+        const useClickOutside = (ref, handler) => {
+            useEffect(() => {
+                const listener = (event) => {
+                    if (!ref.current || ref.current.contains(event.target)) return;
+                    handler(event);
+                };
+                document.addEventListener("mousedown", listener);
+                document.addEventListener("touchstart", listener);
+                return () => {
+                    document.removeEventListener("mousedown", listener);
+                    document.removeEventListener("touchstart", listener);
+                };
+            }, [ref, handler]);
+        };
+
+        // --- APP CONFIG (PRICING) ---
+        const APP_CONFIG = {
+            DEFAULTS: { template: 'YEAR_2025' },
+            PRICING_TEMPLATES: {
+                'YEAR_2025': {
+                    PAINT: { '1x1': { client: 265, emp: 115 }, '2x2': { client: 290, emp: 135 }, '3x2': { client: 315, emp: 160 }, 'Studio': { client: 265, emp: 115 } },
+                    CLEAN: { '1x1': { client: 135, emp: 60 }, '2x2': { client: 145, emp: 70 }, '3x2': { client: 155, emp: 80 }, 'Studio': { client: 135, emp: 60 } },
+                    TOUCH_UP_PAINT: { '1x1': { client: 165, emp: 85 }, '2x2': { client: 190, emp: 95 }, '3x2': { client: 215, emp: 110 } },
+                    TOUCH_UP_CLEAN: { 'Colina_Flat': { client: 65, emp: 50 }, '1x1': { client: 65, emp: 50 }, '2x2': { client: 75, emp: 50 }, '3x2': { client: 85, emp: 50 } },
+                    EXTRAS: { 'Garage Paint': { client: 100, emp: 60 }, 'Door & Trim': { client: 120, emp: 40 }, 'Front Door Only': { client: 80, emp: 40 }, 'Kilz': { client: 50, emp: 25 }, 'Large Unit': { client: 20, emp: 10 }, 'Stairs': { client: 25, emp: 15 }, 'Townhouse': { client: 25, emp: 15 }, 'Mop & Glo': { client: 10, emp: 5 }, 'Drywall Repair': { client: 0, emp: 0 } }
+                }
+            },
+            PROPERTY_CONFIGS: {
+                'Sunset Apts': { template: 'YEAR_2025', overrides: { 'CLEAN': { '1x1': { client: 999, emp: 500 } } } },
+                'Ocean View': { template: 'YEAR_2025' }
+            }
+        };
+
+        const calculatePrice = (property, size, type) => {
+            const propConfig = APP_CONFIG.PROPERTY_CONFIGS[property] || {};
+            const templateName = propConfig.template || APP_CONFIG.DEFAULTS.template;
+            const template = APP_CONFIG.PRICING_TEMPLATES[templateName];
+            let categoryKey = null;
+            if (type === 'Clean') categoryKey = 'CLEAN';
+            else if (type === 'Paint') categoryKey = 'PAINT';
+            else if (type === 'Touch Up Paint') categoryKey = 'TOUCH_UP_PAINT';
+            else if (type === 'Touch Up Clean') categoryKey = 'TOUCH_UP_CLEAN';
+            if (!categoryKey) return { client: 0, employee: 0 };
+            if (propConfig.overrides && propConfig.overrides[categoryKey] && propConfig.overrides[categoryKey][size]) return propConfig.overrides[categoryKey][size];
+            if (template && template[categoryKey] && template[categoryKey][size]) return template[categoryKey][size];
+            return { client: 0, employee: 0 };
+        };
+
+        const getExtrasList = (property) => {
+            const propConfig = APP_CONFIG.PROPERTY_CONFIGS[property] || {};
+            const templateName = propConfig.template || APP_CONFIG.DEFAULTS.template;
+            return APP_CONFIG.PRICING_TEMPLATES[templateName].EXTRAS;
+        };
+
+        const generateInvoiceNote = (job, extrasStr) => {
+            let serviceMapped = job.type;
+            if (job.type === 'Paint') serviceMapped = 'Repaint';
+            else if (job.type === 'Clean') serviceMapped = 'Full Clean';
+            else if (job.type === 'Touch Up Paint') serviceMapped = 'Touch-Up Paint';
+            let note = `Vacant ${job.size} ${serviceMapped}`;
+            if (extrasStr) {
+                const parts = extrasStr.split(',').map(s => s.trim()).filter(s => s);
+                if (parts.length > 0) note += ', + ' + parts.join(', + ');
+            }
+            return note;
+        };
+
+        // --- MOCK DATA ---
+        const MOCK_EMPLOYEES = [{ id: 'emp1', name: 'John Doe', color: '#3b82f6' }, { id: 'emp2', name: 'Jane Smith', color: '#10b981' }, { id: 'emp3', name: 'Bob Johnson', color: '#f59e0b' }];
+        const generateMockJobs = () => {
+            const jobs = [];
+            const statuses = ['Pending', 'In Progress', 'Complete', 'Paid', 'Cancel'];
+            const types = ['Paint', 'Clean', 'Touch Up Paint', 'Touch Up Clean'];
+            const properties = ['Sunset Apts', 'Ocean View', 'Highland Park', 'Downtown Lofts'];
+            const sizes = ['1x1', '2x2', '3x2', 'Studio'];
+            for (let i = 0; i < 50; i++) {
+                const status = statuses[Math.floor(Math.random() * statuses.length)];
+                const type = types[Math.floor(Math.random() * types.length)];
+                const property = properties[Math.floor(Math.random() * properties.length)];
+                const size = sizes[Math.floor(Math.random() * sizes.length)];
+                const prices = calculatePrice(property, size, type);
+                const extras = Math.random() > 0.8 ? 'Large Unit ($45)' : '';
+                const extrasPrice = extras ? 45 : 0;
+                const jobForNote = { type, size };
+                const invoiceNote = generateInvoiceNote(jobForNote, extras);
+                jobs.push({
+                    id: `job-${i}`,
+                    jobNumber: `JN-${1000 + i}`,
+                    date: new Date(Date.now() - Math.floor(Math.random() * 1000000000)).toISOString().split('T')[0],
+                    property: property,
+                    apt: `${Math.floor(Math.random() * 900) + 100}`,
+                    size: size,
+                    type: type,
+                    assignedTo: MOCK_EMPLOYEES[Math.floor(Math.random() * MOCK_EMPLOYEES.length)].name,
+                    status: status,
+                    invoiceStatus: status === 'Complete' ? (Math.random() > 0.5 ? 'Sent' : 'Draft') : 'None',
+                    po: Math.random() > 0.7 ? `PO-${Math.floor(Math.random() * 10000)}` : '',
+                    invoiceNumber: status === 'Complete' && Math.random() > 0.5 ? `INV-2024-${Math.floor(Math.random() * 1000)}` : '',
+                    extras: extras,
+                    notes: Math.random() > 0.9 ? 'Gate code 1234' : '',
+                    invoiceNote: invoiceNote,
+                    clientPrice: prices.client,
+                    employeePrice: prices.employee,
+                    extrasPrice: extrasPrice,
+                });
+            }
+            return jobs;
+        };
+
+        // --- CONTEXT ---
+        const AppContext = createContext(null);
+        const useApp = () => useContext(AppContext);
+
+        const AppProvider = ({ children }) => {
+            const [jobs, setJobs] = useState(generateMockJobs());
+            const [currentView, setCurrentView] = useState('employees');
+            const [jobsViewMode, setJobsViewMode] = useState('DATE_FILTERED');
+            const [dateViewUnit, setDateViewUnit] = useState('month');
+            const [focusDateRange, setFocusDateRange] = useState(null);
+            const [isImporting, setIsImporting] = useState(false);
+            const [systemLogs, setSystemLogs] = useState([]);
+            const [settings, setSettings] = useState({ logoUrl: '', dateDialVisibility: 'everywhere', enableDebugConsole: true });
+
+            const addJob = (job) => setJobs(prev => [job, ...prev]);
+            const updateJob = (id, updates) => setJobs(prev => prev.map(j => j.id === id ? { ...j, ...updates } : j));
+            const deleteJobs = (ids) => setJobs(prev => prev.filter(j => !ids.includes(j.id)));
+            const clearJobs = () => setJobs([]);
+            const addLog = (log) => setSystemLogs(prev => [...prev, log]);
+            const saveExtras = (jobId, extrasSummary, extrasPrice) => {
+                updateJob(jobId, { extras: extrasSummary, extrasPrice: extrasPrice });
+            };
+
+            return (
+                <AppContext.Provider value={{
+                    jobs, addJob, updateJob, deleteJobs, clearJobs,
+                    currentView, setCurrentView,
+                    jobsViewMode, setJobsViewMode,
+                    dateViewUnit, setDateViewUnit,
+                    focusDateRange, setFocusDateRange,
+                    isImporting, setIsImporting,
+                    systemLogs, addLog, saveExtras,
+                    settings, setSettings,
+                    employees: MOCK_EMPLOYEES,
+                    t: (key) => key // Mock translation
+                }}>
+                    {children}
+                </AppContext.Provider>
+            );
+        };
+
+        // --- PLACEHOLDERS ---
+        // --- DATE HEADER COMPONENT ---
+        const DateHeader = ({ currentRange, onRangeChange, onClear, hasActiveFilter }) => {
+            const { jobs, dateViewUnit, setDateViewUnit } = useApp();
+            const viewUnit = dateViewUnit || 'day';
+            const setViewUnit = setDateViewUnit || (() => { });
+            const containerRef = useRef(null);
+
+            // CONFIG
+            const ITEM_WIDTH = 50;
+            const VISIBLE_BUFFER = 15;
+
+            // Base date for the visual center
+            const effectiveDate = currentRange ? currentRange.start : new Date();
+            const [virtualDate, setVirtualDate] = useState(new Date(effectiveDate));
+            const [animX, setAnimX] = useState(0);
+
+            // Wheel Physics State
+            const wheelAccumulator = useRef(0);
+            const animationFrameRef = useRef(null);
+            const velocity = useRef(0);
+            const isSpinning = useRef(false);
+            const lastTime = useRef(0);
+            const virtualDateRef = useRef(virtualDate);
+
+            useEffect(() => { virtualDateRef.current = virtualDate; }, [virtualDate]);
+
+            // Sync virtual date when external range changes
+            useEffect(() => {
+                if (currentRange) {
+                    if (!animationFrameRef.current) {
+                        const diffTime = Math.abs(currentRange.start.getTime() - virtualDate.getTime());
+                        const diffDays = diffTime / (1000 * 3600 * 24);
+
+                        if (diffDays > 0 && diffDays < 90) {
+                            animateDateTransition(currentRange.start);
+                        } else {
+                            setVirtualDate(currentRange.start);
+                        }
+                    }
+                }
+            }, [currentRange]);
+
+            const animateDateTransition = (targetDate) => {
+                const startDate = new Date(virtualDate);
+                const startTime = performance.now();
+                const duration = 600;
+
+                const diffTime = targetDate.getTime() - startDate.getTime();
+                const diffDays = diffTime / (1000 * 3600 * 24);
+
+                const animate = (currentTime) => {
+                    const elapsed = currentTime - startTime;
+                    const progress = Math.min(elapsed / duration, 1);
+                    const ease = 1 - Math.pow(1 - progress, 5);
+
+                    const currentDayOffset = diffDays * ease;
+                    const integerDayOffset = Math.round(currentDayOffset);
+                    const fractionalShift = currentDayOffset - integerDayOffset;
+
+                    const nextDate = new Date(startDate);
+                    nextDate.setDate(startDate.getDate() + integerDayOffset);
+                    setVirtualDate(nextDate);
+                    setAnimX(-(fractionalShift * ITEM_WIDTH));
+
+                    if (progress < 1) {
+                        animationFrameRef.current = requestAnimationFrame(animate);
+                    } else {
+                        setVirtualDate(targetDate);
+                        setAnimX(0);
+                        animationFrameRef.current = null;
+                    }
+                };
+
+                if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+                animationFrameRef.current = requestAnimationFrame(animate);
+            };
+
+            const updateParentRange = (date) => {
+                let start, end;
+                if (viewUnit === 'day') {
+                    start = date;
+                    end = new Date(date);
+                    end.setDate(end.getDate() + 180);
+                } else if (viewUnit === 'week') {
+                    start = getStartOfWeek(date);
+                    end = getEndOfWeek(date);
+                } else {
+                    start = new Date(date.getFullYear(), date.getMonth(), 1);
+                    end = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+                }
+
+                if (currentRange && start.getTime() === currentRange.start.getTime() && end.getTime() === currentRange.end.getTime()) return;
+                onRangeChange({ start, end });
+            };
+
+            const navigate = (direction) => {
+                const newDate = new Date(virtualDate);
+                const multiplier = direction === 'next' ? 1 : -1;
+
+                if (viewUnit === 'day') newDate.setDate(newDate.getDate() + multiplier);
+                else if (viewUnit === 'week') newDate.setDate(newDate.getDate() + (multiplier * 7));
+                else if (viewUnit === 'month') newDate.setMonth(newDate.getMonth() + multiplier);
+
+                animateDateTransition(newDate);
+                updateParentRange(newDate);
+            };
+
+            const physicsLoop = (time) => {
+                if (!isSpinning.current) return;
+
+                const deltaTime = Math.min(time - lastTime.current, 50);
+                lastTime.current = time;
+                velocity.current *= 0.92;
+                wheelAccumulator.current += velocity.current * deltaTime;
+
+                const TICK_THRESHOLD = 5;
+
+                if (Math.abs(wheelAccumulator.current) >= TICK_THRESHOLD) {
+                    const ticks = Math.trunc(wheelAccumulator.current / TICK_THRESHOLD);
+                    wheelAccumulator.current -= ticks * TICK_THRESHOLD;
+
+                    const next = new Date(virtualDateRef.current);
+                    if (viewUnit === 'day') next.setDate(next.getDate() + ticks);
+                    else if (viewUnit === 'week') next.setDate(next.getDate() + (ticks * 7));
+                    else if (viewUnit === 'month') next.setMonth(next.getMonth() + ticks);
+
+                    setVirtualDate(next);
+                }
+
+                if (Math.abs(velocity.current) < 0.005) {
+                    isSpinning.current = false;
+                    velocity.current = 0;
+                    updateParentRange(virtualDateRef.current);
+                } else {
+                    requestAnimationFrame(physicsLoop);
+                }
+            };
+
+            const startSpin = (e) => {
+                if (!currentRange) return;
+                const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+                velocity.current += delta * 0.002;
+                if (velocity.current > 0.5) velocity.current = 0.5;
+                if (velocity.current < -0.5) velocity.current = -0.5;
+
+                if (!isSpinning.current) {
+                    isSpinning.current = true;
+                    lastTime.current = performance.now();
+                    requestAnimationFrame(physicsLoop);
+                }
+            };
+
+            const visibleItems = useMemo(() => {
+                const items = [];
+                for (let i = -VISIBLE_BUFFER; i <= VISIBLE_BUFFER; i++) {
+                    const d = new Date(virtualDate);
+                    d.setDate(d.getDate() + i);
+                    items.push({ date: d, index: i });
+                }
+                return items;
+            }, [virtualDate]);
+
+            const dayStats = useMemo(() => {
+                if (!currentRange) return null;
+                const targetDateStr = virtualDate.toISOString().split('T')[0];
+                const dayJobs = jobs.filter(j => j.date === targetDateStr);
+                return {
+                    cancels: dayJobs.filter(j => j.status === 'Cancel').length,
+                    completed: dayJobs.filter(j => j.status === 'Complete').length,
+                    paint: dayJobs.filter(j => j.type.toLowerCase().includes('paint')).length,
+                    clean: dayJobs.filter(j => j.type.toLowerCase().includes('clean')).length,
+                    repair: dayJobs.filter(j => j.type.toLowerCase().includes('repair')).length
+                };
+            }, [jobs, virtualDate, currentRange]);
+
+            const displayDate = useMemo(() => {
+                if (!currentRange) return "Viewing All History";
+                if (viewUnit === 'day') return formatDateRange(virtualDate, virtualDate);
+                if (viewUnit === 'week') return formatDateRange(getStartOfWeek(virtualDate), getEndOfWeek(virtualDate));
+                if (viewUnit === 'month') return virtualDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                return formatDateRange(currentRange.start, currentRange.end);
+            }, [currentRange, virtualDate, viewUnit]);
+
+            return (
+                <div
+                    className="bg-slate-900 border border-slate-800 flex flex-col relative shadow-md z-30 h-28 w-full rounded-xl overflow-hidden select-none transition-all"
+                    onWheel={startSpin}
+                >
+                    {/* TOP BAR */}
+                    <div className="flex items-center justify-between px-4 py-1.5 bg-slate-950/50 border-b border-white/5 h-9 shrink-0">
+                        <div className="flex bg-slate-800/50 rounded-lg p-0.5 border border-white/10">
+                            {['day', 'week', 'month'].map(unit => (
+                                <button
+                                    key={unit}
+                                    onClick={() => {
+                                        setViewUnit(unit);
+                                        if (unit === 'day') onRangeChange({ start: virtualDate, end: virtualDate });
+                                        else if (unit === 'week') onRangeChange({ start: getStartOfWeek(virtualDate), end: getEndOfWeek(virtualDate) });
+                                        else {
+                                            const start = new Date(virtualDate.getFullYear(), virtualDate.getMonth(), 1);
+                                            const end = new Date(virtualDate.getFullYear(), virtualDate.getMonth() + 1, 0);
+                                            onRangeChange({ start, end });
+                                        }
+                                    }}
+                                    className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase transition-all ${viewUnit === unit && currentRange ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
+                                >
+                                    {unit}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2 pointer-events-none">
+                            <span className={`text-[10px] font-mono font-medium tracking-wide px-3 py-0.5 rounded-full border shadow-sm transition-colors ${currentRange ? 'bg-slate-800 text-slate-200 border-slate-700' : 'bg-emerald-900/50 text-emerald-400 border-emerald-800'}`}>
+                                {displayDate}
+                            </span>
+                        </div>
+                        <button onClick={() => { if (currentRange) onRangeChange(null); else { const today = new Date(); setVirtualDate(today); setAnimX(0); updateParentRange(today); } }} className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all border ${!currentRange ? 'bg-emerald-500 text-white border-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-800 text-slate-400 border-white/10 hover:bg-slate-700 hover:text-white'}`}>
+                            {!currentRange ? <CheckCircle2 size={10} /> : <History size={10} />}
+                            {currentRange ? 'View All' : 'Filtering Off'}
+                        </button>
+                    </div>
+
+                    {/* VISUAL DIAL AREA */}
+                    <div className="relative flex-1 w-full overflow-hidden bg-slate-900 group cursor-grab active:cursor-grabbing">
+                        <button onClick={() => navigate('prev')} className="absolute left-0 top-0 bottom-0 w-12 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent z-30 flex items-center justify-center text-slate-400 hover:text-white transition-all hover:bg-slate-800/30 cursor-pointer active:scale-95"><ChevronLeft size={24} /></button>
+                        <button onClick={() => navigate('next')} className="absolute right-0 top-0 bottom-0 w-12 bg-gradient-to-l from-slate-900 via-slate-900/80 to-transparent z-30 flex items-center justify-center text-slate-400 hover:text-white transition-all hover:bg-slate-800/30 cursor-pointer active:scale-95"><ChevronRight size={24} /></button>
+                        <div className="absolute left-1/2 top-0 bottom-0 w-[50px] -translate-x-1/2 z-10 pointer-events-none border-x border-slate-700/50 bg-gradient-to-b from-white/5 to-transparent shadow-[inset_0_0_10px_rgba(0,0,0,0.5)] rounded-sm">
+                            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-red-600 shadow-[0_0_5px_rgba(220,38,38,0.8)]"></div>
+                            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-0.5 h-2 bg-red-600 shadow-[0_0_5px_rgba(220,38,38,0.8)]"></div>
+                            <div className="absolute top-0 left-0 right-0 h-[1px] bg-white/20"></div>
+                        </div>
+                        <div className="absolute top-0 bottom-0 left-1/2 h-full flex items-center" ref={containerRef} style={{ transform: `translateX(${animX}px)` }}>
+                            {visibleItems.map((item) => {
+                                const offset = item.index * ITEM_WIDTH;
+                                const isCenter = item.index === 0;
+                                const isWeekend = item.date.getDay() === 0 || item.date.getDay() === 6;
+                                return (
+                                    <div key={item.date.toISOString()} className="absolute flex flex-col items-center justify-center transition-transform duration-200 ease-out hover:bg-white/5 rounded-lg py-1" style={{ transform: `translateX(${offset}px) translateX(-50%)`, width: `${ITEM_WIDTH}px`, zIndex: isCenter ? 10 : 1, opacity: currentRange ? (Math.abs(item.index) > 4 ? 0.3 : 1) : 0.3 }} onClick={(e) => { e.stopPropagation(); setVirtualDate(item.date); setAnimX(0); updateParentRange(item.date); }}>
+                                        <span className={`text-[8px] font-bold uppercase mb-0.5 ${isCenter ? 'text-red-400' : isWeekend ? 'text-slate-500' : 'text-slate-600'}`}>{item.date.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                        <span className={`font-sans text-lg font-bold transition-transform ${isCenter ? 'text-white scale-125 drop-shadow-[0_0_3px_rgba(255,255,255,0.5)]' : isWeekend ? 'text-slate-600' : 'text-slate-500'}`}>{item.date.getDate()}</span>
+                                        {item.date.getDate() === 1 && <div className="absolute -top-3 bg-slate-700 text-slate-200 text-[7px] px-1 py-0 rounded border border-slate-600 pointer-events-none">{item.date.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}</div>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        {dayStats && (
+                            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-3 z-20 bg-slate-950/80 px-3 py-0.5 rounded-full border border-slate-800 backdrop-blur-sm">
+                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-red-500">C=</span><span className="text-[9px] font-mono text-red-400">{dayStats.cancels}</span></div>
+                                <div className="w-px h-2 bg-slate-700"></div>
+                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-emerald-500">Done=</span><span className="text-[9px] font-mono text-emerald-400">{dayStats.completed}</span></div>
+                                <div className="w-px h-2 bg-slate-700"></div>
+                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-blue-400">Paint</span><span className="text-[9px] font-mono text-blue-300">{dayStats.paint}</span></div>
+                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-purple-400">Clean</span><span className="text-[9px] font-mono text-purple-300">{dayStats.clean}</span></div>
+                                <div className="w-px h-2 bg-slate-700"></div>
+                                <div className="flex items-center gap-1"><span className="text-[9px] font-bold text-amber-500">Repair</span><span className="text-[9px] font-mono text-amber-400">{dayStats.repair}</span></div>
+                            </div>
+                        )}
+                    </div>
+                    {!currentRange && (
+                        <div className="absolute inset-0 z-20 bg-slate-950/60 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                            <div className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 shadow-2xl flex flex-col items-center">
+                                <span className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-1">Timeline Unlocked</span>
+                                <span className="text-[10px] text-slate-500">Showing all records from database</span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- DASHBOARD COMPONENT ---
+        const Dashboard = () => {
+            const { jobs, focusDateRange, setFocusDateRange } = useApp();
+            const [tasks, setTasks] = useState([
+                { id: 1, text: 'Review Q3 Financials', completed: false },
+                { id: 2, text: 'Call Supplier regarding paint', completed: true },
+                { id: 3, text: 'Update employee roster', completed: false }
+            ]);
+            const [newTaskText, setNewTaskText] = useState('');
+
+            // Initialize date range if null
+            useEffect(() => {
+                if (!focusDateRange) {
+                    setFocusDateRange({
+                        start: getStartOfMonth(new Date()),
+                        end: getEndOfMonth(new Date())
+                    });
+                }
+            }, []);
+
+            const filteredJobs = useMemo(() => {
+                if (!focusDateRange) return jobs;
+                return jobs.filter(job => isWithinRange(job.date, focusDateRange.start, focusDateRange.end));
+            }, [jobs, focusDateRange]);
+
+            const stats = useMemo(() => {
+                const revenue = filteredJobs.reduce((sum, job) => sum + (job.clientPrice || 0) + (job.extrasPrice || 0), 0);
+                const payroll = filteredJobs.reduce((sum, job) => sum + (job.employeePrice || 0), 0);
+                const margin = revenue - payroll;
+                const marginPercent = revenue > 0 ? (margin / revenue) * 100 : 0;
+                const unbilledJobs = filteredJobs.filter(j => j.status === 'Complete' && j.invoiceStatus !== 'Sent');
+                const unbilledAmount = unbilledJobs.reduce((sum, job) => sum + (job.clientPrice || 0) + (job.extrasPrice || 0), 0);
+
+                return { revenue, payroll, margin, marginPercent, total: filteredJobs.length, unbilledAmount, unbilledCount: unbilledJobs.length };
+            }, [filteredJobs]);
+
+            const monthlyHistory = useMemo(() => {
+                const hist = {};
+                jobs.forEach(job => {
+                    const d = new Date(job.date);
+                    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    if (!hist[key]) hist[key] = { dateObj: getStartOfMonth(d), revenue: 0, payroll: 0, count: 0, unbilled: 0 };
+                    const rev = (job.clientPrice || 0) + (job.extrasPrice || 0);
+                    hist[key].revenue += rev;
+                    hist[key].payroll += (job.employeePrice || 0);
+                    hist[key].count += 1;
+                    if (job.status === 'Complete' && job.invoiceStatus !== 'Sent') hist[key].unbilled += rev;
+                });
+                return Object.values(hist).sort((a, b) => b.dateObj.getTime() - a.dateObj.getTime());
+            }, [jobs]);
+
+            const handleAddTask = (e) => {
+                e.preventDefault();
+                if (!newTaskText.trim()) return;
+                setTasks([...tasks, { id: Date.now(), text: newTaskText, completed: false }]);
+                setNewTaskText('');
+            };
+
+            const toggleTask = (id) => {
+                setTasks(tasks.map(t => t.id === id ? { ...t, completed: !t.completed } : t));
+            };
+
+            const deleteTask = (id) => {
+                setTasks(tasks.filter(t => t.id !== id));
+            };
+
+            return (
+                <div className="flex flex-col h-full space-y-6 max-w-7xl mx-auto p-6 overflow-y-auto custom-scrollbar">
+                    {/* Header */}
+                    <div className="flex items-center justify-between shrink-0">
+                        <div>
+                            <h1 className="text-2xl font-bold text-slate-800">Dashboard</h1>
+                            <p className="text-slate-500 text-sm">Overview of your business performance</p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button className="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-slate-50 shadow-sm">Export Report</button>
+                            <button className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-blue-700 shadow-sm flex items-center gap-2"><Plus size={16} /> New Job</button>
+                        </div>
+                    </div>
+
+                    {/* Date Control */}
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
+                        <DateHeader currentRange={focusDateRange} onRangeChange={setFocusDateRange} onClear={() => setFocusDateRange(null)} />
+                    </div>
+
+                    {/* KPI Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><DollarSign size={48} className="text-blue-600" /></div>
+                            <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Revenue</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.revenue)}</h3></div>
+                            <div className="flex items-center gap-1 text-xs font-medium text-emerald-600 bg-emerald-50 w-fit px-2 py-1 rounded-full"><TrendingUp size={12} /><span>{stats.total} jobs selected</span></div>
+                        </div>
+                        <div className={`p-5 rounded-xl border shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group transition-all ${stats.unbilledAmount > 0 ? 'bg-orange-50 border-orange-200' : 'bg-white border-slate-200'}`}>
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><AlertTriangle size={48} className={stats.unbilledAmount > 0 ? "text-orange-600" : "text-emerald-600"} /></div>
+                            <div><p className={`text-xs font-bold uppercase tracking-wider ${stats.unbilledAmount > 0 ? 'text-orange-700' : 'text-slate-400'}`}>{stats.unbilledAmount > 0 ? 'Action: Ready to Bill' : 'All Clear'}</p><h3 className={`text-2xl font-bold mt-1 ${stats.unbilledAmount > 0 ? 'text-orange-700' : 'text-slate-800'}`}>{formatCurrency(stats.unbilledAmount)}</h3></div>
+                            <div className="flex items-center gap-1 text-xs font-medium">{stats.unbilledAmount > 0 ? <span className="text-orange-800 bg-orange-100 px-2 py-1 rounded-full font-bold flex items-center gap-1"><AlertCircle size={12} />{stats.unbilledCount} invoices pending</span> : <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-full flex items-center gap-1"><CheckCircle size={12} />Up to date!</span>}</div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><Briefcase size={48} className="text-emerald-600" /></div>
+                            <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Net Margin</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.margin)}</h3></div>
+                            <div className={`flex items-center gap-1 text-xs font-medium w-fit px-2 py-1 rounded-full ${stats.marginPercent > 40 ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50'}`}><span>{stats.marginPercent.toFixed(1)}% Margin</span></div>
+                        </div>
+                        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-32 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity"><Users size={48} className="text-purple-600" /></div>
+                            <div><p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Est. Payroll</p><h3 className="text-2xl font-bold text-slate-800 mt-1">{formatCurrency(stats.payroll)}</h3></div>
+                            <div className="text-xs text-slate-500 mt-2">Labor Cost</div>
+                        </div>
+                    </div>
+
+                    {/* Middle Section */}
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 shrink-0 min-h-[300px]">
+                        {/* Tasks */}
+                        <div className="bg-white p-0 rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden">
+                            <div className="p-4 border-b border-slate-100 bg-slate-50"><h4 className="font-bold text-slate-700 flex items-center gap-2"><CheckSquare size={18} className="text-blue-500" />Quick Tasks</h4></div>
+                            <form onSubmit={handleAddTask} className="p-3 border-b border-slate-100 flex gap-2">
+                                <input className="flex-1 text-sm border border-slate-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Add a new task..." value={newTaskText} onChange={(e) => setNewTaskText(e.target.value)} />
+                                <button type="submit" className="bg-blue-600 text-white p-1.5 rounded-lg hover:bg-blue-700 transition-colors"><Plus size={18} /></button>
+                            </form>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-0 max-h-[300px]">
+                                {tasks.length === 0 ? <div className="text-center text-slate-400 p-8 italic text-sm">No pending tasks</div> : <div className="divide-y divide-slate-100">{tasks.map(task => (
+                                    <div key={task.id} className="flex items-center gap-3 p-3 hover:bg-slate-50 group transition-colors">
+                                        <button onClick={() => toggleTask(task.id)} className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${task.completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 hover:border-blue-400'}`}>{task.completed && <CheckSquare size={12} />}</button>
+                                        <span className={`flex-1 text-sm ${task.completed ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{task.text}</span>
+                                        <button onClick={() => deleteTask(task.id)} className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"><Trash2 size={14} /></button>
+                                    </div>
+                                ))}</div>}
+                            </div>
+                        </div>
+
+                        {/* History */}
+                        <div className="bg-white p-0 rounded-xl border border-slate-200 shadow-sm flex flex-col overflow-hidden lg:col-span-2">
+                            <div className="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center"><h4 className="font-bold text-slate-700 flex items-center gap-2"><History size={18} className="text-slate-400" />Action History</h4><span className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 px-2 py-1 rounded">Mock Data</span></div>
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-0 max-h-[300px]">
+                                <div className="divide-y divide-slate-100">
+                                    <div className="p-8 text-center text-slate-400 italic">History log connected to live actions coming soon...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Financial History */}
+                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden shrink-0">
+                        <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between"><h4 className="font-bold text-slate-700 flex items-center gap-2"><History size={18} className="text-blue-500" />Monthly Financial History</h4><span className="text-xs text-slate-400 font-medium uppercase">All Time Records</span></div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="text-xs text-slate-500 uppercase bg-slate-50/50 border-b border-slate-100">
+                                    <tr><th className="px-6 py-3 font-semibold">Month</th><th className="px-6 py-3 font-semibold text-center">Jobs</th><th className="px-6 py-3 font-semibold text-right">Revenue</th><th className="px-6 py-3 font-semibold text-right">Payroll</th><th className="px-6 py-3 font-semibold text-right">Net Margin</th><th className="px-6 py-3 font-semibold text-right">Margin %</th><th className="px-6 py-3 font-semibold text-right text-orange-600">Unbilled</th></tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {monthlyHistory.map((m, idx) => {
+                                        const margin = m.revenue - m.payroll;
+                                        const marginPct = m.revenue > 0 ? (margin / m.revenue) * 100 : 0;
+                                        const isCurrent = focusDateRange ? isWithinRange(m.dateObj.toISOString().split('T')[0], focusDateRange.start, focusDateRange.end) : false;
+                                        return (
+                                            <tr key={idx} className={`hover:bg-slate-50 transition-colors ${isCurrent ? 'bg-blue-50/30' : ''}`}>
+                                                <td className="px-6 py-3 font-bold text-slate-700">{m.dateObj.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}{isCurrent && <span className="ml-2 text-[9px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase">Viewing</span>}</td>
+                                                <td className="px-6 py-3 text-center text-slate-600">{m.count}</td>
+                                                <td className="px-6 py-3 text-right font-medium text-slate-800">{formatCurrency(m.revenue)}</td>
+                                                <td className="px-6 py-3 text-right text-slate-500">{formatCurrency(m.payroll)}</td>
+                                                <td className="px-6 py-3 text-right font-medium text-emerald-600">{formatCurrency(margin)}</td>
+                                                <td className="px-6 py-3 text-right text-slate-600">{marginPct.toFixed(1)}%</td>
+                                                <td className="px-6 py-3 text-right font-medium">{m.unbilled > 0 ? <span className="text-orange-600">{formatCurrency(m.unbilled)}</span> : <span className="text-slate-300">-</span>}</td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+        // --- JOBS TABLE & DEPENDENCIES ---
+
+        const DraggablePanel = ({ title, children, onClose, initialPosition = { x: 100, y: 100 }, onPositionChange, className = '' }) => {
+            const [position, setPosition] = useState(initialPosition);
+            const [isDragging, setIsDragging] = useState(false);
+            const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+            const [isCollapsed, setIsCollapsed] = useState(false);
+            const panelRef = useRef(null);
+
+            useEffect(() => {
+                const handleMouseMove = (e) => {
+                    if (isDragging) {
+                        const newPos = { x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y };
+                        setPosition(newPos);
+                        if (onPositionChange) onPositionChange(newPos);
+                    }
+                };
+                const handleMouseUp = () => setIsDragging(false);
+                if (isDragging) {
+                    document.addEventListener('mousemove', handleMouseMove);
+                    document.addEventListener('mouseup', handleMouseUp);
+                }
+                return () => {
+                    document.removeEventListener('mousemove', handleMouseMove);
+                    document.removeEventListener('mouseup', handleMouseUp);
+                };
+            }, [isDragging, dragOffset, onPositionChange]);
+
+            const handleMouseDown = (e) => {
+                if (panelRef.current) {
+                    const rect = panelRef.current.getBoundingClientRect();
+                    setDragOffset({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+                    setIsDragging(true);
+                }
+            };
+
+            return (
+                <div ref={panelRef} style={{ left: position.x, top: position.y, zIndex: 50 }} className={`fixed bg-white rounded-xl shadow-2xl border border-slate-200 flex flex-col transition-all duration-75 ${className} ${isCollapsed ? 'w-auto h-auto' : 'w-80'}`}>
+                    <div onMouseDown={handleMouseDown} className={`px-3 py-2 bg-slate-100 border-b border-slate-200 rounded-t-xl flex justify-between items-center cursor-move select-none ${isDragging ? 'cursor-grabbing' : ''}`}>
+                        <div className="flex items-center gap-2 text-slate-700 font-bold text-xs"><GripHorizontal size={14} className="text-slate-400" />{title}</div>
+                        <div className="flex items-center gap-1">
+                            <button onClick={(e) => { e.stopPropagation(); setIsCollapsed(!isCollapsed); }} className="p-1 hover:bg-slate-200 rounded text-slate-500">{isCollapsed ? <Maximize2 size={12} /> : <Minus size={12} />}</button>
+                            <button onClick={(e) => { e.stopPropagation(); onClose(); }} className="p-1 hover:bg-red-100 hover:text-red-500 rounded text-slate-500"><X size={12} /></button>
+                        </div>
+                    </div>
+                    {!isCollapsed && <div className="flex-1 overflow-hidden flex flex-col bg-white rounded-b-xl">{children}</div>}
+                </div>
+            );
+        };
+
+        const JobsHistoryWidget = ({ history, onUndo }) => {
+            return (
+                <div className="flex flex-col h-full max-h-[400px]">
+                    <div className="p-3 bg-slate-50 border-b border-slate-100 text-xs font-bold text-slate-500 uppercase">Recent Actions</div>
+                    <div className="flex-1 overflow-y-auto p-0">
+                        {history.length === 0 ? <div className="p-4 text-center text-slate-400 text-xs italic">No history yet</div> : (
+                            <div className="divide-y divide-slate-100">
+                                {history.map(action => (
+                                    <div key={action.id} className="p-3 hover:bg-slate-50 flex items-center gap-3 group">
+                                        <div className={`p-1.5 rounded ${action.type === 'CREATE' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            {action.type === 'CREATE' ? <Plus size={12} /> : <Edit2 size={12} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="text-xs font-bold text-slate-700 truncate">{action.description}</div>
+                                            <div className="text-[10px] text-slate-400">{new Date(action.timestamp).toLocaleTimeString()}</div>
+                                        </div>
+                                        <button onClick={() => onUndo(action)} className="opacity-0 group-hover:opacity-100 text-[10px] bg-slate-800 text-white px-2 py-1 rounded hover:bg-slate-700">Undo</button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+        // --- APP COMPONENT ---
+        const ExtrasModal = ({ isOpen, onClose, job, onSave }) => {
+            if (!isOpen || !job) return null;
+
+            const [rows, setRows] = useState([]);
+            const availableExtras = getExtrasList(job.property);
+
+            useEffect(() => {
+                if (job.extras) {
+                    const parts = job.extras.split(',').map(s => s.trim());
+                    const parsed = parts.map(p => {
+                        const match = p.match(/(.*) \(\$(\d+)\)/);
+                        if (match) return { name: match[1], price: parseInt(match[2]) };
+                        return { name: p, price: 0 };
+                    });
+                    setRows(parsed);
+                } else {
+                    setRows([{ name: '', price: 0 }]);
+                }
+            }, [job]);
+
+            const updateRow = (index, field, value) => {
+                const newRows = [...rows];
+                newRows[index][field] = value;
+                if (field === 'name') {
+                    const known = availableExtras[value];
+                    if (known) newRows[index].price = known.client;
+                }
+                setRows(newRows);
+            };
+
+            const addRow = () => setRows([...rows, { name: '', price: 0 }]);
+            const removeRow = (index) => setRows(rows.filter((_, i) => i !== index));
+
+            const handleSave = () => {
+                const validRows = rows.filter(r => r.name);
+                const summary = validRows.map(r => `${r.name} ($${r.price})`).join(', ');
+                const total = validRows.reduce((sum, r) => sum + Number(r.price), 0);
+                onSave(job.id, summary, total);
+                onClose();
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-[500px]">
+                        <h2 className="text-xl font-bold mb-4">Manage Extras</h2>
+                        <div className="space-y-3 mb-6 max-h-[300px] overflow-y-auto">
+                            {rows.map((row, i) => (
+                                <div key={i} className="flex gap-2 items-center">
+                                    <div className="flex-1 relative">
+                                        <input
+                                            list="extras-list"
+                                            type="text"
+                                            value={row.name}
+                                            onChange={(e) => updateRow(i, 'name', e.target.value)}
+                                            placeholder="Extra Name"
+                                            className="w-full p-2 border rounded text-sm"
+                                        />
+                                    </div>
+                                    <div className="w-24 relative">
+                                        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                                        <input
+                                            type="number"
+                                            value={row.price}
+                                            onChange={(e) => updateRow(i, 'price', e.target.value)}
+                                            className="w-full p-2 pl-5 border rounded text-sm"
+                                        />
+                                    </div>
+                                    <button onClick={() => removeRow(i)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+                                </div>
+                            ))}
+                            <datalist id="extras-list">
+                                {Object.keys(availableExtras).map(k => <option key={k} value={k} />)}
+                            </datalist>
+                            <button onClick={addRow} className="text-blue-600 text-sm font-bold flex items-center gap-1"><Plus size={14} /> Add Row</button>
+                        </div>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={onClose} className="px-4 py-2 text-slate-500 font-bold hover:bg-slate-100 rounded-lg">Cancel</button>
+                            <button onClick={handleSave} className="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const JobEditModal = ({ isOpen, onClose, jobId }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96">
+                        <h2 className="text-xl font-bold mb-4">Edit Job {jobId}</h2>
+                        <p className="text-slate-500 mb-6">This is a mock modal. In the real app, you would edit job details here.</p>
+                        <button onClick={onClose} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700">Close</button>
+                    </div>
+                </div>
+            );
+        };
+
+        const InvoiceStagingModal = ({ isOpen, onClose, selectedJobs }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-96">
+                        <h2 className="text-xl font-bold mb-4">Invoice Staging</h2>
+                        <p className="text-slate-500 mb-6">Selected {selectedJobs.length} jobs for invoicing.</p>
+                        <button onClick={onClose} className="w-full bg-blue-600 text-white py-2 rounded-lg font-bold hover:bg-blue-700">Close</button>
+                    </div>
+                </div>
+            );
+        };
+
+
+        const ContactsPortals = () => (
+            <div className="flex gap-2 overflow-x-auto pb-2">
+                {['VendorCafe', 'OpsTechnology', 'RealPage', 'Yardi'].map(p => (
+                    <div key={p} className="bg-white border border-slate-200 px-3 py-1 rounded-full text-xs font-medium text-slate-600 whitespace-nowrap shadow-sm hover:border-blue-300 cursor-pointer">{p}</div>
+                ))}
+            </div>
+        );
+
+        const JobsTable = () => {
+            const { jobs, deleteJobs, updateJob, addJob, clearJobs, employees, jobsViewMode, setJobsViewMode, focusDateRange, setFocusDateRange, isImporting, setIsImporting, addLog } = useApp();
+            // Map jobsViewMode to local viewMode for compatibility if needed, but we used jobsViewMode in context
+            const viewMode = jobsViewMode;
+
+            const [searchTerm, setSearchTerm] = useState('');
+            const [selectedIds, setSelectedIds] = useState(new Set());
+            const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+            const [editingJobId, setEditingJobId] = useState(null);
+            const [isStagingOpen, setIsStagingOpen] = useState(false);
+            const [extrasModalJob, setExtrasModalJob] = useState(null);
+            const [localHistory, setLocalHistory] = useState([]);
+            const [showHistory, setShowHistory] = useState(false);
+            const historyButtonRef = useRef(null);
+            const [historyPosition, setHistoryPosition] = useState({ x: 100, y: 100 });
+            const [visibleColumns, setVisibleColumns] = useState({
+                jobNumber: true, property: true, apt: true, size: true, type: true, date: true,
+                assignedTo: true, po: true, invoiceStatus: true, status: true,
+                extras: true, notes: true, invoiceNote: true, clientPrice: true, employeePrice: true,
+                total: true, invoiceNumber: true
+            });
+            const [showColumnMenu, setShowColumnMenu] = useState(false);
+            const columnMenuRef = useRef(null);
+            useClickOutside(columnMenuRef, () => setShowColumnMenu(false));
+            const [currentPage, setCurrentPage] = useState(1);
+            const itemsPerPage = 50;
+
+            const toggleColumn = (col) => setVisibleColumns(prev => ({ ...prev, [col]: !prev[col] }));
+            const addToHistory = (action) => setLocalHistory(prev => [action, ...prev]);
+
+            const handleUndo = (action) => {
+                if (action.type === 'CREATE') deleteJobs([action.jobId]);
+                else if (action.type === 'DELETE') action.previousData.forEach(j => addJob(j));
+                else if (action.type === 'DELETE_ALL') action.previousData.forEach(j => addJob(j));
+                else if (action.type === 'UPDATE_STATUS') updateJob(action.jobId, action.previousData);
+                else if (action.type === 'UPDATE_EXTRAS') updateJob(action.jobId, action.previousData);
+                setLocalHistory(prev => prev.filter(a => a.id !== action.id));
+            };
+
+            const handleAddJob = () => {
+                const newJob = {
+                    id: generateId(),
+                    jobNumber: `JN-${Math.floor(Math.random() * 10000)}`, // Simple random for now
+                    date: new Date().toISOString(),
+                    property: 'New Property',
+                    apt: 'Unit',
+                    type: 'Clean',
+                    size: '1x1',
+                    assignedTo: '',
+                    status: 'Pending',
+                    invoiceStatus: 'None',
+                    clientPrice: 0,
+                    employeePrice: 0,
+                    extrasPrice: 0,
+                    notes: '',
+                    extras: '',
+                    invoiceNote: ''
+                };
+                addJob(newJob);
+                addToHistory({ id: generateId(), timestamp: Date.now(), type: 'CREATE', description: 'Created New Job', jobId: newJob.id, user: 'You' });
+                setEditingJobId(newJob.id);
+            };
+
+            // ... (rest of handlers)
+
+            const filteredJobs = useMemo(() => {
+                return jobs.filter(job => {
+                    let matchesMode = true;
+                    if (viewMode === 'READY_TO_BILL') matchesMode = job.status === 'Complete' && job.invoiceStatus !== 'Sent';
+                    else if (viewMode === 'OPEN_JOBS') matchesMode = job.status !== 'Complete' && job.status !== 'Paid' && job.status !== 'Cancel';
+
+                    // Date Filter Logic
+                    if (focusDateRange) {
+                        const jobDate = new Date(job.date);
+                        // Reset time for accurate comparison
+                        jobDate.setHours(0, 0, 0, 0);
+                        const start = new Date(focusDateRange.start);
+                        start.setHours(0, 0, 0, 0);
+                        const end = new Date(focusDateRange.end);
+                        end.setHours(23, 59, 59, 999);
+
+                        if (jobDate < start || jobDate > end) matchesMode = false;
+                    }
+
+                    if (!matchesMode) return false;
+                    return searchTerm === '' ||
+                        job.property.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        job.apt.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        (job.jobNumber && job.jobNumber.toLowerCase().includes(searchTerm.toLowerCase()));
+                });
+            }, [jobs, searchTerm, viewMode, focusDateRange]);
+
+            // AUTO-SORT EFFECT: Enforce Date Ascending when Date Range Changes
+            useEffect(() => {
+                if (focusDateRange) {
+                    setSortConfig({ key: 'date', direction: 'asc' });
+                }
+            }, [focusDateRange]);
+
+            const sortedJobs = useMemo(() => {
+                let items = [...filteredJobs];
+                if (sortConfig) {
+                    items.sort((a, b) => {
+                        if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+                return items;
+            }, [filteredJobs, sortConfig]);
+
+            const totalPages = Math.ceil(sortedJobs.length / itemsPerPage);
+            const paginatedJobs = useMemo(() => {
+                const start = (currentPage - 1) * itemsPerPage;
+                return sortedJobs.slice(start, start + itemsPerPage);
+            }, [sortedJobs, currentPage]);
+
+            const requestSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+                setSortConfig({ key, direction });
+            };
+
+            const toggleSelection = (id) => {
+                const newSet = new Set(selectedIds);
+                if (newSet.has(id)) newSet.delete(id);
+                else newSet.add(id);
+                setSelectedIds(newSet);
+            };
+
+            const toggleSelectAll = () => {
+                if (selectedIds.size === paginatedJobs.length) setSelectedIds(new Set());
+                else setSelectedIds(new Set(paginatedJobs.map(j => j.id)));
+            };
+
+            const getRowStyle = (job) => {
+                if (job.status === 'Complete' && job.invoiceStatus === 'Sent') return { backgroundColor: '#dcfce7' };
+                if (job.assignedTo) {
+                    const emp = employees.find(e => e.name === job.assignedTo);
+                    if (emp) return { backgroundColor: `${emp.color}15` };
+                }
+                return {};
+            };
+
+            return (
+                <div className="flex flex-row h-full bg-slate-50 relative overflow-hidden">
+                    <div className="flex-1 flex flex-col min-w-0">
+                        {viewMode === 'DATE_FILTERED' && <DateHeader currentRange={focusDateRange} onRangeChange={setFocusDateRange} onClear={() => setJobsViewMode('VIEW_ALL')} hasActiveFilter={!!focusDateRange} />}
+                        <div className="px-2 pt-2"><ContactsPortals /></div>
+                        <div className="bg-white border-b border-slate-200 p-2 flex flex-col md:flex-row gap-4 justify-between items-center shrink-0 shadow-sm z-20">
+                            <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
+                                <button onClick={handleAddJob} className="flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 rounded-md text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm whitespace-nowrap"><Plus size={14} /> New Job</button>
+                                <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                                <button onClick={() => setJobsViewMode('OPEN_JOBS')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${viewMode === 'OPEN_JOBS' ? 'bg-slate-100 text-slate-800 border border-slate-200' : 'text-slate-500 hover:bg-slate-50'}`}><Briefcase size={14} /> Open Jobs</button>
+                                <button onClick={() => setJobsViewMode('READY_TO_BILL')} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${viewMode === 'READY_TO_BILL' ? 'bg-red-50 text-red-700 border border-red-100' : 'text-slate-500 hover:bg-slate-50'}`}><CheckCircle size={14} /> Ready to Bill</button>
+                                <div className="h-6 w-px bg-slate-200 mx-1"></div>
+                                <div className="flex items-center gap-1">
+                                    <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"><Edit2 size={14} /></button>
+                                    <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"><Search size={14} /></button>
+                                    <button className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded"><Filter size={14} /></button>
+                                    <div className="relative" ref={columnMenuRef}>
+                                        <button onClick={() => setShowColumnMenu(!showColumnMenu)} className={`p-1.5 rounded transition-colors ${showColumnMenu ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`} title="Columns"><Layers size={14} /></button>
+                                        {showColumnMenu && (
+                                            <div className="absolute top-full right-0 mt-1 w-48 bg-white rounded-lg shadow-xl border border-slate-200 z-50 p-2 max-h-[80vh] overflow-y-auto">
+                                                <div className="text-xs font-bold text-slate-500 mb-2 px-1">VISIBLE COLUMNS</div>
+                                                {[
+                                                    { k: 'jobNumber', l: 'Job #' },
+                                                    { k: 'property', l: 'Property' }, { k: 'apt', l: 'Apt' }, { k: 'size', l: 'Size' }, { k: 'type', l: 'Job Type' },
+                                                    { k: 'date', l: 'Date' }, { k: 'assignedTo', l: 'Assigned' }, { k: 'po', l: 'PO' }, { k: 'invoiceStatus', l: 'Draft/Sent' },
+                                                    { k: 'status', l: 'Status' }, { k: 'extras', l: 'Extras' }, { k: 'notes', l: 'Notes' }, { k: 'invoiceNote', l: 'Inv. Note' },
+                                                    { k: 'clientPrice', l: 'Price (Client)' }, { k: 'employeePrice', l: 'Pay (Emp)' }, { k: 'total', l: 'Total' }, { k: 'invoiceNumber', l: 'Invoice' }
+                                                ].map(col => (
+                                                    <label key={col.k} className="flex items-center gap-2 px-1 py-1 hover:bg-slate-50 rounded cursor-pointer">
+                                                        <input type="checkbox" checked={visibleColumns[col.k]} onChange={() => toggleColumn(col.k)} className="rounded text-blue-600 focus:ring-blue-500" />
+                                                        <span className="text-xs">{col.l}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button ref={historyButtonRef} onClick={() => {
+                                        if (!showHistory && historyButtonRef.current) {
+                                            const rect = historyButtonRef.current.getBoundingClientRect();
+                                            setHistoryPosition({ x: Math.max(10, rect.right - 320), y: rect.bottom + 8 });
+                                        }
+                                        setShowHistory(!showHistory);
+                                    }} className={`p-1.5 rounded transition-colors ${showHistory ? 'bg-blue-100 text-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`} title="Toggle History"><Hourglass size={14} /></button>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                                    <input type="text" placeholder="Search..." className="w-48 pl-8 pr-3 py-1.5 text-xs rounded-md border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                                </div>
+                                <button onClick={handleClearAllJobs} className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-white text-red-600 border border-red-200 hover:bg-red-50 hover:border-red-300 shadow-sm transition-colors" title="Clear All Jobs">
+                                    <Trash2 size={14} />
+                                    <span className="font-bold text-xs hidden sm:inline">Clear</span>
+                                </button>
+                                <button className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-white text-blue-600 border border-blue-200 hover:bg-blue-50 hover:border-blue-300 shadow-sm relative overflow-hidden">
+                                    <FolderInput size={14} />
+                                    <span className="font-bold text-xs hidden sm:inline">{isImporting ? 'Importing...' : 'Import Jobs'}</span>
+                                    <input type="file" multiple accept=".xlsx,.xls,.csv" className="absolute inset-0 opacity-0 cursor-pointer" onChange={onFileUpload} disabled={isImporting} />
+                                </button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-auto relative">
+                            <table className="w-full text-xs text-left border-collapse">
+                                <thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-wider sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="p-3 w-8 border-b border-slate-200 text-center">#</th>
+                                        <th className="p-3 w-8 border-b border-slate-200"><button onClick={toggleSelectAll} className="flex items-center justify-center text-slate-400 hover:text-slate-600">{selectedIds.size > 0 ? <CheckSquare size={14} className="text-blue-600" /> : <Square size={14} />}</button></th>
+                                        {visibleColumns.jobNumber && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px]" onClick={() => requestSort('jobNumber')}><div className="flex items-center gap-1">JOB #<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.property && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[160px]" onClick={() => requestSort('property')}><div className="flex items-center gap-1">PROPERTY<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.apt && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[60px]" onClick={() => requestSort('apt')}><div className="flex items-center gap-1">APT<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.size && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[60px]" onClick={() => requestSort('size')}><div className="flex items-center gap-1">SIZE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.type && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[100px]" onClick={() => requestSort('type')}><div className="flex items-center gap-1">JOB TYPE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.date && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[90px]" onClick={() => requestSort('date')}><div className="flex items-center gap-1">DATE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.assignedTo && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[120px]" onClick={() => requestSort('assignedTo')}><div className="flex items-center gap-1">ASSIGNED<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.po && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px]" onClick={() => requestSort('po')}><div className="flex items-center gap-1">PO<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.invoiceStatus && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px]" onClick={() => requestSort('invoiceStatus')}><div className="flex items-center gap-1">DRAFT/SENT<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.status && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[100px]" onClick={() => requestSort('status')}><div className="flex items-center gap-1">STATUS<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.extras && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[150px]" onClick={() => requestSort('extras')}><div className="flex items-center gap-1">EXTRAS<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.notes && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[120px]" onClick={() => requestSort('notes')}><div className="flex items-center gap-1">NOTES<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.invoiceNote && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[200px]" onClick={() => requestSort('invoiceNote')}><div className="flex items-center gap-1">INV. NOTE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.clientPrice && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px] text-right" onClick={() => requestSort('clientPrice')}><div className="flex items-center justify-end gap-1">PRICE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.employeePrice && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px] text-right" onClick={() => requestSort('employeePrice')}><div className="flex items-center justify-end gap-1">PAY<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.total && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[80px] text-right" onClick={() => requestSort('total')}><div className="flex items-center justify-end gap-1">TOTAL<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        {visibleColumns.invoiceNumber && <th className="p-3 border-b border-slate-200 cursor-pointer hover:bg-slate-100 min-w-[100px]" onClick={() => requestSort('invoiceNumber')}><div className="flex items-center gap-1">INVOICE<ArrowUpDown size={10} className="opacity-0 group-hover:opacity-50" /></div></th>}
+                                        <th className="p-3 border-b border-slate-200 text-center w-[60px]">ACTIONS</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 bg-white">
+                                    {paginatedJobs.map((job, i) => (
+                                        <tr key={job.id} className={`group hover:bg-blue-50/50 transition-colors ${selectedIds.has(job.id) ? 'bg-blue-50' : ''}`} style={getRowStyle(job)}>
+                                            <td className="p-3 border-b border-slate-100 text-center text-slate-400">{(currentPage - 1) * itemsPerPage + i + 1}</td>
+                                            <td className="p-3 border-b border-slate-100"><button onClick={() => toggleSelection(job.id)} className="flex items-center justify-center text-slate-400 hover:text-blue-600">{selectedIds.has(job.id) ? <CheckSquare size={14} className="text-blue-600" /> : <Square size={14} />}</button></td>
+                                            {visibleColumns.jobNumber && <td className="p-3 border-b border-slate-100 font-mono text-slate-600 font-bold">{job.jobNumber || '-'}</td>}
+                                            {visibleColumns.property && <td className="p-3 border-b border-slate-100 font-bold text-slate-800">{job.property}</td>}
+                                            {visibleColumns.apt && <td className="p-3 border-b border-slate-100 font-medium text-slate-600">{job.apt}</td>}
+                                            {visibleColumns.size && <td className="p-3 border-b border-slate-100 text-slate-500">{job.size}</td>}
+                                            {visibleColumns.type && <td className="p-3 border-b border-slate-100"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${job.type === 'Clean' ? 'bg-emerald-100 text-emerald-700' : job.type === 'Paint' ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{job.type}</span></td>}
+                                            {visibleColumns.date && <td className="p-3 border-b border-slate-100 font-medium text-slate-700">{formatDate(job.date)}</td>}
+                                            {visibleColumns.assignedTo && <td className="p-3 border-b border-slate-100"><div className="flex items-center gap-2">{job.assignedTo ? <><div className="w-5 h-5 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-[10px] font-bold">{job.assignedTo.charAt(0)}</div><span className="text-slate-700">{job.assignedTo}</span></> : <span className="text-slate-300 italic">Unassigned</span>}</div></td>}
+                                            {visibleColumns.po && <td className="p-3 border-b border-slate-100 text-slate-600 font-mono text-[10px]">{job.po || '-'}</td>}
+                                            {visibleColumns.invoiceStatus && <td className="p-3 border-b border-slate-100"><span className={`px-2 py-0.5 rounded text-[10px] font-bold ${job.invoiceStatus === 'Sent' ? 'bg-purple-100 text-purple-700' : job.invoiceStatus === 'Draft' ? 'bg-amber-50 text-amber-600' : 'text-slate-300'}`}>{job.invoiceStatus}</span></td>}
+                                            {visibleColumns.status && <td className="p-3 border-b border-slate-100"><select value={job.status} onChange={(e) => handleStatusChange(job.id, e.target.value)} className={`bg-transparent font-bold text-xs focus:outline-none cursor-pointer ${job.status === 'Complete' ? 'text-emerald-600' : job.status === 'Pending' ? 'text-amber-600' : 'text-blue-600'}`}><option value="Pending">Pending</option><option value="In Progress">In Progress</option><option value="Complete">Complete</option><option value="Paid">Paid</option><option value="Cancel">Cancel</option></select></td>}
+                                            {visibleColumns.extras && (
+                                                <td className="p-3 border-b border-slate-100">
+                                                    <div className="flex items-center gap-1 group/extras">
+                                                        <span className="truncate max-w-[120px] text-slate-500 italic" title={job.extras}>{job.extras || '-'}</span>
+                                                        <button onClick={() => setExtrasModalJob(job)} className="opacity-0 group-hover/extras:opacity-100 p-1 hover:bg-blue-100 text-blue-600 rounded transition-opacity"><Plus size={12} /></button>
+                                                    </div>
+                                                </td>
+                                            )}
+                                            {visibleColumns.notes && <td className="p-3 border-b border-slate-100 text-slate-400 truncate max-w-[100px]" title={job.notes}>{job.notes || '-'}</td>}
+                                            {visibleColumns.invoiceNote && <td className="p-3 border-b border-slate-100 text-slate-600 truncate max-w-[180px] text-[10px]" title={job.invoiceNote}>{job.invoiceNote || '-'}</td>}
+                                            {visibleColumns.clientPrice && <td className="p-3 border-b border-slate-100 text-right font-medium text-slate-700">{formatCurrency(job.clientPrice)}</td>}
+                                            {visibleColumns.employeePrice && <td className="p-3 border-b border-slate-100 text-right text-slate-500">{formatCurrency(job.employeePrice)}</td>}
+                                            {visibleColumns.total && <td className="p-3 border-b border-slate-100 text-right font-bold text-slate-800">{formatCurrency((job.clientPrice || 0) + (job.extrasPrice || 0))}</td>}
+                                            {visibleColumns.invoiceNumber && <td className="p-3 border-b border-slate-100 text-slate-600 font-mono text-[10px]">{job.invoiceNumber || '-'}</td>}
+                                            <td className="p-3 border-b border-slate-100 text-center"><button onClick={() => setEditingJobId(job.id)} className="text-slate-400 hover:text-blue-600"><MoreHorizontal size={14} /></button></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="bg-white border-t border-slate-200 p-2 flex justify-between items-center shrink-0 text-[10px] text-slate-500 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-30">
+                            <div>Showing {paginatedJobs.length} of {filteredJobs.length} jobs</div>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30"><ChevronLeft size={14} /></button>
+                                <span className="font-medium">Page {currentPage} of {totalPages || 1}</span>
+                                <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="p-1 rounded hover:bg-slate-100 disabled:opacity-30"><ChevronRight size={14} /></button>
+                            </div>
+                        </div>
+                        <JobEditModal isOpen={!!editingJobId} onClose={() => setEditingJobId(null)} jobId={editingJobId} />
+                        <InvoiceStagingModal isOpen={isStagingOpen} onClose={() => setIsStagingOpen(false)} selectedJobs={jobs.filter(j => selectedIds.has(j.id))} />
+                        <ExtrasModal isOpen={!!extrasModalJob} onClose={() => setExtrasModalJob(null)} job={extrasModalJob} onSave={handleSaveExtras} />
+                    </div>
+                    {showHistory && (
+                        <DraggablePanel title="History" onClose={() => setShowHistory(false)} initialPosition={historyPosition} onPositionChange={setHistoryPosition} className="max-h-[500px]">
+                            <JobsHistoryWidget history={localHistory} onUndo={handleUndo} />
+                        </DraggablePanel>
+                    )}
+                </div>
+            );
+        };
+        const SignatureModal = ({ isOpen, onClose, onSign }) => {
+            if (!isOpen) return null;
+            const [name, setName] = useState('');
+            const [email, setEmail] = useState('');
+            const [isVerified, setIsVerified] = useState(false);
+
+            useEffect(() => {
+                if (isOpen) {
+                    setName('');
+                    setEmail('');
+                    setIsVerified(false);
+                }
+            }, [isOpen]);
+
+            const handleNameChange = (e) => {
+                const val = e.target.value;
+                setName(val);
+                if (val.length > 2) {
+                    setEmail(val.toLowerCase().replace(/\s+/g, '.') + '@aroma-op-x.com');
+                    setIsVerified(true);
+                } else {
+                    setEmail('');
+                    setIsVerified(false);
+                }
+            };
+
+            const handleSubmit = () => {
+                if (isVerified) {
+                    onSign(name, email);
+                    onClose();
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="bg-white rounded-xl shadow-2xl w-[400px] overflow-hidden">
+                        <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                                <FileSignature size={18} className="text-blue-600" />
+                                Digital Signature
+                            </h3>
+                            <button onClick={onClose} className="p-1 hover:bg-slate-200 rounded-full text-slate-400">
+                                <X size={16} />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Full Name</label>
+                                <input
+                                    type="text"
+                                    value={name}
+                                    onChange={handleNameChange}
+                                    className="w-full p-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Type to sign..."
+                                    autoFocus
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Generated Email ID</label>
+                                <div className="w-full p-2 bg-slate-50 border border-slate-200 rounded-lg text-slate-600 font-mono text-sm flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${isVerified ? 'bg-green-500' : 'bg-slate-300'}`}></div>
+                                    {email || 'Waiting for signature...'}
+                                </div>
+                            </div>
+                            <div className="pt-2">
+                                <button
+                                    onClick={handleSubmit}
+                                    disabled={!isVerified}
+                                    className={`w-full py-3 rounded-lg font-bold flex items-center justify-center gap-2 transition-all ${isVerified ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-500/30' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                                >
+                                    <Send size={16} />
+                                    Submit Invoice
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-center text-slate-400">
+                                By clicking submit, you certify that the work has been completed.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- EMPLOYEES VIEW ---
+        const EmployeesView = () => {
+            const { employees, jobs, focusDateRange, setFocusDateRange, saveExtras } = useApp();
+            const [selectedEmployee, setSelectedEmployee] = useState(null);
+            const [isSignatureOpen, setIsSignatureOpen] = useState(false);
+            const [extrasModalJob, setExtrasModalJob] = useState(null);
+
+            // Initialize date range if null (default to current month)
+            useEffect(() => {
+                if (!focusDateRange) {
+                    setFocusDateRange({
+                        start: getStartOfMonth(new Date()),
+                        end: getEndOfMonth(new Date())
+                    });
+                }
+            }, []);
+
+            const filteredJobs = useMemo(() => {
+                if (!selectedEmployee) return [];
+                let empJobs = jobs.filter(j => j.assignedTo === selectedEmployee.name);
+
+                // Date Filter
+                if (focusDateRange) {
+                    empJobs = empJobs.filter(job => isWithinRange(job.date, focusDateRange.start, focusDateRange.end));
+                }
+
+                // Sort by date desc
+                return empJobs.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }, [jobs, selectedEmployee, focusDateRange]);
+
+            const getEmployeeStats = (empName) => {
+                // Stats should probably respect the filter too for the "Paycheck View", 
+                // but "Pending Payout" usually implies ALL unpaid work.
+                // Let's keep "Pending Payout" as global (all time), but show filtered totals in the table footer.
+                const allEmpJobs = jobs.filter(j => j.assignedTo === empName && j.status === 'Complete');
+                const totalEarned = allEmpJobs.reduce((sum, j) => sum + (j.employeePrice || 0), 0);
+                const unbilled = allEmpJobs.filter(j => j.invoiceStatus !== 'Sent').reduce((sum, j) => sum + (j.employeePrice || 0), 0);
+                return { totalEarned, unbilled, jobCount: allEmpJobs.length };
+            };
+
+            const handleInvoiceSubmit = (name, email) => {
+                alert(`Invoice submitted successfully for ${selectedEmployee.name}!\nSigned by: ${name}\nVerified Email: ${email}`);
+                // Here you would typically update the invoice status of the jobs
+            };
+
+            const handleSaveExtras = (jobId, summary, total) => {
+                // For employees, we might want to restrict what they can edit, but for now we allow full extras editing
+                // The price passed here from ExtrasModal is the CLIENT price usually.
+                // But the requirement says "employee can only see their numbers".
+                // If they add an extra, does it add to their pay? 
+                // Usually extras have a split. 
+                // For simplicity in this "Mirror" feature:
+                // We will assume if an employee adds an extra, they are adding it to the job.
+                // The ExtrasModal currently uses 'availableExtras' which has client/emp split.
+                // We need to make sure ExtrasModal handles this context or we just save it.
+                // The current ExtrasModal implementation calculates 'price' based on client price in 'availableExtras'.
+                // We might need to adjust ExtrasModal if we want to show/edit Employee Price specifically.
+                // However, the user said "extras i add there show on schedule", implying the record itself.
+                // Let's use the existing saveExtras which updates the job.
+                saveExtras(jobId, summary, total);
+            };
+
+            if (selectedEmployee) {
+                const stats = getEmployeeStats(selectedEmployee.name);
+                const viewTotal = filteredJobs.reduce((sum, j) => sum + (j.employeePrice || 0), 0);
+
+                return (
+                    <div className="flex flex-col h-full bg-slate-50">
+                        <div className="bg-white border-b border-slate-200 p-4 flex justify-between items-center shadow-sm shrink-0">
+                            <div className="flex items-center gap-4">
+                                <button onClick={() => setSelectedEmployee(null)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500 transition-colors">
+                                    <ArrowLeft size={20} />
+                                </button>
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-lg">
+                                        {selectedEmployee.name.charAt(0)}
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-bold text-slate-800">{selectedEmployee.name}</h2>
+                                        <div className="text-xs text-slate-500">Employee Paycheck View</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                    <div className="text-xs text-slate-500 font-bold uppercase">Pending Payout (All Time)</div>
+                                    <div className="text-xl font-bold text-emerald-600">{formatCurrency(stats.unbilled)}</div>
+                                </div>
+                                <button
+                                    onClick={() => setIsSignatureOpen(true)}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg font-bold hover:bg-blue-700 flex items-center gap-2 shadow-lg shadow-blue-900/20"
+                                >
+                                    <CheckCircle size={18} />
+                                    Submit Invoice
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Date Header for Filtering */}
+                        <div className="bg-white border-b border-slate-200 shrink-0">
+                            <DateHeader currentRange={focusDateRange} onRangeChange={setFocusDateRange} onClear={() => setFocusDateRange(null)} />
+                        </div>
+
+                        <div className="flex-1 overflow-auto p-6">
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-xs">
+                                        <tr>
+                                            <th className="p-4 border-b border-slate-200">Job #</th>
+                                            <th className="p-4 border-b border-slate-200">Date</th>
+                                            <th className="p-4 border-b border-slate-200">Property</th>
+                                            <th className="p-4 border-b border-slate-200">Extras / Notes</th>
+                                            <th className="p-4 border-b border-slate-200 text-right">Commission</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {filteredJobs.length === 0 ? (
+                                            <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No jobs found for this period.</td></tr>
+                                        ) : (
+                                            filteredJobs.map(job => (
+                                                <tr key={job.id} className="hover:bg-slate-50 transition-colors">
+                                                    <td className="p-4 font-mono text-slate-600 font-bold">{job.jobNumber}</td>
+                                                    <td className="p-4 text-slate-700">{formatDate(job.date)}</td>
+                                                    <td className="p-4 font-medium text-slate-800">
+                                                        {job.property}
+                                                        <div className="text-xs text-slate-500 font-normal">{job.apt} • {job.type}</div>
+                                                    </td>
+                                                    <td className="p-4 text-slate-600">
+                                                        <div className="flex items-center gap-2">
+                                                            {job.extras ? (
+                                                                <div className="text-xs bg-amber-50 text-amber-700 px-2 py-1 rounded border border-amber-100 cursor-pointer hover:bg-amber-100" onClick={() => setExtrasModalJob(job)}>
+                                                                    Extras: {job.extras}
+                                                                </div>
+                                                            ) : (
+                                                                <button onClick={() => setExtrasModalJob(job)} className="text-xs text-blue-500 hover:text-blue-700 flex items-center gap-1">
+                                                                    <Plus size={12} /> Add Extras
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-xs italic text-slate-400 mt-1">{job.notes || 'No notes'}</div>
+                                                    </td>
+                                                    <td className="p-4 text-right font-bold text-slate-700">{formatCurrency(job.employeePrice)}</td>
+                                                </tr>
+                                            ))
+                                        )}
+                                    </tbody>
+                                    <tfoot className="bg-slate-50 font-bold text-slate-700">
+                                        <tr>
+                                            <td colSpan="4" className="p-4 text-right uppercase text-xs text-slate-500">Period Total</td>
+                                            <td className="p-4 text-right text-lg">{formatCurrency(viewTotal)}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
+                            </div>
+                        </div>
+
+                        <SignatureModal isOpen={isSignatureOpen} onClose={() => setIsSignatureOpen(false)} onSign={handleInvoiceSubmit} />
+                        <ExtrasModal isOpen={!!extrasModalJob} onClose={() => setExtrasModalJob(null)} job={extrasModalJob} onSave={handleSaveExtras} />
+                    </div>
+                );
+            }
+
+            return (
+                <div className="p-6 bg-slate-50 h-full overflow-auto">
+                    <h1 className="text-2xl font-bold text-slate-800 mb-6">Employee Management</h1>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {employees.map(emp => {
+                            const stats = getEmployeeStats(emp.name);
+                            return (
+                                <div key={emp.id} onClick={() => setSelectedEmployee(emp)} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 cursor-pointer hover:shadow-md hover:border-blue-300 transition-all group">
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-2xl font-bold text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition-colors">
+                                            {emp.name.charAt(0)}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-lg font-bold text-slate-800 group-hover:text-blue-600 transition-colors">{emp.name}</h3>
+                                            <div className="text-sm text-slate-500">Employee ID: {emp.id}</div>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                                        <div>
+                                            <div className="text-xs text-slate-400 font-bold uppercase mb-1">Completed Jobs</div>
+                                            <div className="text-lg font-bold text-slate-700">{stats.jobCount}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-xs text-slate-400 font-bold uppercase mb-1">Unbilled Pay</div>
+                                            <div className="text-lg font-bold text-emerald-600">{formatCurrency(stats.unbilled)}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- SIDEBAR COMPONENT ---
+        const Sidebar = ({ currentView, onChangeView, collapsed, onToggleCollapse }) => {
+            const { settings, t } = useApp();
+
+            const menuItems = [
+                { id: 'dashboard', label: t('dashboard'), icon: LayoutDashboard },
+                { id: 'jobs', label: t('jobs'), icon: ClipboardList },
+                { id: 'employees', label: t('employees'), icon: Users },
+                { id: 'properties', label: t('properties'), icon: Building },
+                { id: 'settings', label: t('settings'), icon: Settings },
+                { id: 'daily-report', label: t('daily-report'), icon: FileText },
+            ];
+
+            return (
+                <div className={`bg-slate-900 text-slate-300 flex flex-col h-full shrink-0 relative z-20 shadow-xl transition-all duration-300 ${collapsed ? 'w-20' : 'w-64'}`}>
+                    {/* Top Logo Area */}
+                    <div className="h-16 flex items-center justify-center border-b border-slate-800 shrink-0 overflow-hidden">
+                        <div className={`transition-all duration-300 transform ${collapsed ? 'scale-100' : 'scale-100'}`}>
+                            {settings.logoUrl ? (
+                                <img src={settings.logoUrl} alt="Logo" className="w-10 h-10 object-contain rounded-lg bg-white" />
+                            ) : (
+                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white shadow-lg shadow-blue-900/50">
+                                    <PaintBucket size={20} fill="currentColor" className="text-blue-100" />
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto custom-scrollbar overflow-x-hidden">
+                        {menuItems.map((item) => {
+                            const Icon = item.icon;
+                            const isActive = currentView === item.id;
+                            return (
+                                <button
+                                    key={item.id}
+                                    onClick={() => onChangeView(item.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-all duration-200 group relative ${isActive ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' : 'hover:bg-slate-800 hover:text-white'} ${collapsed ? 'justify-center px-0' : ''}`}
+                                >
+                                    <Icon size={20} className={isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'} />
+                                    {!collapsed && <span className="whitespace-nowrap">{item.label}</span>}
+                                    {collapsed && (
+                                        <div className="absolute left-16 bg-slate-900 text-white text-xs px-3 py-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl border border-slate-700 font-medium">
+                                            {item.label}
+                                        </div>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </nav>
+
+                    {/* Footer */}
+                    <div className="border-t border-slate-800 bg-slate-900/50 shrink-0">
+                        {!collapsed && (
+                            <div className="px-6 py-6 animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden text-center">
+                                <h2 className="text-lg font-bold text-white tracking-wide mb-1 font-sans">Aroma Op-x</h2>
+                                <div className="text-[10px] text-slate-500 font-medium tracking-wider uppercase mb-3">By Win Martinez Ai</div>
+                                <div className="inline-block bg-slate-800/50 rounded px-2 py-1 border border-slate-800">
+                                    <span className="text-[9px] font-mono text-slate-600">v1.0.0</span>
+                                </div>
+                            </div>
+                        )}
+                        <div className="p-4 flex justify-center border-t border-slate-800/50">
+                            <button onClick={onToggleCollapse} className="p-2 rounded-full hover:bg-slate-800 text-slate-500 hover:text-white transition-colors border border-transparent hover:border-slate-700" title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}>
+                                {collapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- LAYOUT ---
+        const MainLayout = () => {
+            const { currentView, setCurrentView } = useApp();
+            const [collapsed, setCollapsed] = useState(false);
+
+            return (
+                <div className="flex h-screen w-full bg-slate-50 text-slate-900 font-sans overflow-hidden">
+                    <Sidebar currentView={currentView} onChangeView={setCurrentView} collapsed={collapsed} onToggleCollapse={() => setCollapsed(!collapsed)} />
+                    <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+                        <main className="flex-1 overflow-hidden relative">
+                            {currentView === 'dashboard' && <Dashboard />}
+                            {currentView === 'jobs' && <JobsTable />}
+                            {currentView === 'employees' && <EmployeesView />}
+                            {currentView === 'properties' && <div className="p-10 text-center text-slate-400">Properties View Placeholder</div>}
+                            {currentView === 'settings' && <div className="p-10 text-center text-slate-400">Settings View Placeholder</div>}
+                        </main>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => <AppProvider><MainLayout /></AppProvider>;
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        lucide.createIcons();
+    </script>
+</body>
+
+</html>
