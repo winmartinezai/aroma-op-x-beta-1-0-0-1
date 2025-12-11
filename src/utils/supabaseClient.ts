@@ -6,9 +6,9 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    // We don't error out hard here because we might still be in "Local Mode"
-    // But we log a warning for the developer.
+export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+
+if (!isSupabaseConfigured) {
     console.warn("⚠️ Supabase Credentials missing. Cloud features will be disabled.");
 }
 

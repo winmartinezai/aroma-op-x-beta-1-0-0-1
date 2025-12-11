@@ -1,8 +1,9 @@
+```
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { AppState, Job, Employee, Property, PriceTable, AppContextType, PricingOverride, PriceConfig, QuickLink, ActionLog, JobsViewMode, LogEntry, ApiConfig, Task, AppConfig, PropertySchedule, InventoryItem, InventoryLog } from '../types/types';
 import { DEFAULT_EMPLOYEES, DEFAULT_PRICES, DEFAULT_PROPERTY_CONTACTS, DEFAULT_PORTAL_URLS, DEFAULT_PRICING_DATA, DEFAULT_QUICK_LINKS, APP_VERSION, TRANSLATIONS, APP_CONFIG } from '../utils/constants';
 import { generateId } from '../utils/helpers';
-import { supabase } from '../utils/supabaseClient'; // IMPORT SUPABASE CLIENT
+import { supabase, isSupabaseConfigured } from '../utils/supabaseClient'; // IMPORT SUPABASE CLIENT
 
 const STORAGE_KEY = 'aroma_ops_data_v2';
 
@@ -66,7 +67,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const jobsNeedingUpdate = jobs.filter(j => !j.jobNumber || j.jobNumber < 100000);
 
         if (jobsNeedingUpdate.length > 0) {
-          console.log(`🔧 MIGRATION: Found ${jobsNeedingUpdate.length} jobs with old/missing IDs. Reassigning to 100xxx...`);
+          console.log(`🔧 MIGRATION: Found ${ jobsNeedingUpdate.length } jobs with old / missing IDs.Reassigning to 100xxx...`);
           let currentMax = jobs.reduce((max, j) => (j.jobNumber && j.jobNumber >= 100000) ? Math.max(max, j.jobNumber) : max, 100100);
           const idsToUpdate = new Set(jobsNeedingUpdate.map(j => j.id));
           jobsNeedingUpdate.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
@@ -207,7 +208,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'CREATE',
-        description: `Created Job: ${newJob.property} ${newJob.apt} (#${newJobNumber})`,
+        description: `Created Job: ${ newJob.property } ${ newJob.apt } (#${ newJobNumber })`,
         currentDataId: newJob.id
       };
       return {
@@ -239,7 +240,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'UPDATE',
-          description: `Updated ${oldJob.property} ${oldJob.apt}`,
+          description: `Updated ${ oldJob.property } ${ oldJob.apt } `,
           previousData: oldJob
         };
         newHistory = addToHistory(prev.history, log);
@@ -260,7 +261,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'UPDATE',
-        description: `Batch Updated ${updates.length} Jobs`,
+        description: `Batch Updated ${ updates.length } Jobs`,
         previousData: prev.jobs.filter(j => ids.has(j.id))
       };
 
@@ -278,10 +279,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       inventory: prev.inventory.map(i => i.id === item.id ? item : i)
     }));
     // Shadow Sync
-    pushChangeToCloud('inventory_items', {
-      id: item.id, name: item.name, category: item.category, unit: item.unit,
-      cost_per_unit: item.costPerUnit, current_stock: item.currentStock, reorder_threshold: item.reorderThreshold
-    });
+    // pushChangeToCloud('inventory_items', {
+    //   id: item.id, name: item.name, category: item.category, unit: item.unit,
+    //   cost_per_unit: item.costPerUnit, current_stock: item.currentStock, reorder_threshold: item.reorderThreshold
+    // });
   };
   const deleteInventoryItem = async (id: string) => {
     setState(prev => ({
@@ -289,6 +290,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       inventory: prev.inventory.filter(i => i.id !== id)
     }));
     try {
+      if (!isSupabaseConfigured) {
+        console.log("☁️ Cloud Delete Skipped: No API Keys");
+        return;
+      }
       await supabase.from('inventory_items').delete().eq('id', id);
     } catch (e) { console.error(e); }
   };
@@ -322,6 +327,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     // Sync Log
     try {
+      if (!isSupabaseConfigured) {
+        console.log("☁️ Cloud Log Sync Skipped: No API Keys");
+        return;
+      }
       await supabase.from('inventory_logs').upsert({
         id: log.id,
         date: log.date,
@@ -362,7 +371,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'UPDATE',
-          description: `Batch Updated ${updatedJobs.length} Jobs during Import`,
+          description: `Batch Updated ${ updatedJobs.length } Jobs during Import`,
           previousData: prev.jobs.filter(j => updateMap.has(j.id))
         };
         newHistory = addToHistory(newHistory, updateLog);
@@ -389,7 +398,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'IMPORT',
-          description: `Imported ${numberedNewJobs.length} Jobs`,
+          description: `Imported ${ numberedNewJobs.length } Jobs`,
           currentDataId: numberedNewJobs.length > 0 ? numberedNewJobs[0].id : undefined // Simplified tracking
         };
         newHistory = addToHistory(newHistory, importLog);
@@ -413,7 +422,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'DELETE',
-        description: `Deleted ${ids.length} Job(s)`,
+        description: `Deleted ${ ids.length } Job(s)`,
         previousData: deletedJobs // Store array of jobs to restore
       };
 
@@ -442,7 +451,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'IMPORT',
-        description: `Imported ${numberedNewJobs.length} Jobs`,
+        description: `Imported ${ numberedNewJobs.length } Jobs`,
         currentDataId: numberedNewJobs.map(j => j.id) // Track IDs to potentially undo import
       };
 
@@ -732,6 +741,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }));
   };
 
+  // Placeholder for updatePropertySchedule
+  const updatePropertySchedule = () => {
+    console.warn("updatePropertySchedule not yet implemented.");
+  };
+
+  // Placeholder for addLog
+  const addLog = (log: LogEntry) => {
+    console.warn("addLog not yet implemented.", log);
+  };
+
+  // Placeholder for setIsImporting
+  const setIsImporting = (isImporting: boolean) => {
+    console.warn("setIsImporting not yet implemented.", isImporting);
+  };
+
   if (!isLoaded) return <div className="flex h-screen items-center justify-center text-slate-500">Loading Aroma Op-x {APP_VERSION}...</div>;
 
   return (
@@ -786,6 +810,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       refreshFromStorage,
       syncPush: async () => {
         // PUSH: Local -> Cloud
+        if (!isSupabaseConfigured) {
+           console.log("☁️ Cloud Push Skipped: No API Keys");
+           return;
+        }
         console.log("☁️ STARTING PUSH SYNC...");
         try {
           // 1. JOBS
@@ -846,6 +874,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
       syncPull: async () => {
         // PULL: Cloud -> Local
+        if (!isSupabaseConfigured) {
+          console.log("☁️ Cloud Sync Skipped: No API Keys");
+          return;
+        }
         // Strategy: Download all, overwrite local if ID matches, add if new.
         try {
           console.log("☁️ STARTING PULL SYNC...");
@@ -958,12 +990,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             prepaidQuotas: (fetchedSettings as any).prepaidQuotas || prev.prepaidQuotas // Restore quotas
           }));
 
-          console.log(`✅ Pulled ${mappedJobs.length} jobs and ${mappedSchedules.length} schedules!`);
-          // alert(`Success: Pulled ${mappedJobs.length} jobs and ${mappedSchedules.length} schedules!`);
+          console.log(`✅ Pulled ${ mappedJobs.length } jobs and ${ mappedSchedules.length } schedules!`);
+          // alert(`Success: Pulled ${ mappedJobs.length } jobs and ${ mappedSchedules.length } schedules!`);
 
         } catch (err: any) {
           console.error("❌ PULL FAILED:", err);
-          // alert(`Sync Failed: ${err.message}`);
+          // alert(`Sync Failed: ${ err.message } `);
         }
       },
       clearCloudData: async () => {
@@ -979,7 +1011,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           alert("Success: All data deleted from Cloud!");
         } catch (err: any) {
           console.error("❌ CLEAR FAILED:", err);
-          alert(`Clear Failed: ${err.message}`);
+          alert(`Clear Failed: ${ err.message } `);
         }
       }
     }}>
