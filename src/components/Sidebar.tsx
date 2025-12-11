@@ -62,15 +62,13 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, collapsed,
             )}
           </div>
           {!collapsed && (
-            <div className="animate-in fade-in slide-in-from-left-4 duration-500 whitespace-nowrap pl-2">
-              <h1 className="font-sans text-2xl font-black tracking-tight text-white leading-none drop-shadow-lg">
+            <div className="animate-in fade-in slide-in-from-left-4 duration-500 whitespace-nowrap pl-3 overflow-visible">
+              <h1 className="font-sans text-lg font-black tracking-tight text-white leading-none drop-shadow-lg">
                 <span className="text-blue-600">AROMA</span> OP-X
               </h1>
               <div
                 className="group cursor-help relative"
-                title="It is said that Winfield was born inside a supercomputer during a power surge. Half man, half metric. He builds High-Performance Operations Centers that run on pure charisma. Once, he optimized a workflow so fast it finished before it started. But his true origin story remains a mystery, cut off by a firewall just as he was about to say... 
-
-...y recuerda se feliz comete un helado."
+                title="It is said that Winfield was born inside a supercomputer during a power surge... y recuerda se feliz comete un helado."
               >
                 <p className="text-[9px] font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-white to-purple-400 mt-1 mb-0.5 animate-shimmer bg-[length:200%_auto] tracking-wide hover:opacity-80 transition-opacity">
                   Developed by.- Win Martinez A<span className="text-red-500">i</span>
@@ -78,7 +76,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onChangeView, collapsed,
               </div>
               <div className="flex items-center gap-2 mt-1">
                 <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-widest leading-none">Operations Command Center</span>
+                <span className="text-[9px] font-medium text-slate-400 uppercase tracking-wider leading-none opacity-80">Operations Command Center</span>
               </div>
             </div>
           )}
