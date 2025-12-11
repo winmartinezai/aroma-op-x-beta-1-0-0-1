@@ -1,4 +1,4 @@
-```
+
 import React, { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { AppState, Job, Employee, Property, PriceTable, AppContextType, PricingOverride, PriceConfig, QuickLink, ActionLog, JobsViewMode, LogEntry, ApiConfig, Task, AppConfig, PropertySchedule, InventoryItem, InventoryLog } from '../types/types';
 import { DEFAULT_EMPLOYEES, DEFAULT_PRICES, DEFAULT_PROPERTY_CONTACTS, DEFAULT_PORTAL_URLS, DEFAULT_PRICING_DATA, DEFAULT_QUICK_LINKS, APP_VERSION, TRANSLATIONS, APP_CONFIG } from '../utils/constants';
@@ -207,7 +207,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'CREATE',
-        description: `Created Job: ${ newJob.property } ${ newJob.apt } (#${ newJobNumber })`,
+        description: 'Created Job',
         currentDataId: newJob.id
       };
       return {
@@ -239,7 +239,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'UPDATE',
-          description: `Updated ${ oldJob.property } ${ oldJob.apt } `,
+          description: 'Updated Job',
           previousData: oldJob
         };
         newHistory = addToHistory(prev.history, log);
@@ -259,15 +259,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const log: ActionLog = {
         id: generateId(),
         timestamp: Date.now(),
-        type: 'UPDATE',
-        description: `Batch Updated ${ updates.length } Jobs`,
-        previousData: prev.jobs.filter(j => ids.has(j.id))
+        type: 'BATCH_UPDATE',
+        description: 'Batch Updated ' + updates.length + ' Jobs',
+        currentDataId: 'BATCH'
       };
-
       const updateMap = new Map(updates.map(u => [u.id, u]));
 
       return {
         ...prev,
+        jobs: prev.jobs.map(j => updateMap.has(j.id) ? { ...j, ...updateMap.get(j.id)! } : j),
         history: addToHistory(prev.history, log)
       };
     });
@@ -370,7 +370,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'UPDATE',
-          description: `Batch Updated ${ updatedJobs.length } Jobs during Import`,
+          description: 'Batch Update during Import',
           previousData: prev.jobs.filter(j => updateMap.has(j.id))
         };
         newHistory = addToHistory(newHistory, updateLog);
@@ -397,7 +397,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           id: generateId(),
           timestamp: Date.now(),
           type: 'IMPORT',
-          description: `Imported ${ numberedNewJobs.length } Jobs`,
+          description: 'Imported ' + numberedNewJobs.length + ' Jobs',
           currentDataId: numberedNewJobs.length > 0 ? numberedNewJobs[0].id : undefined // Simplified tracking
         };
         newHistory = addToHistory(newHistory, importLog);
@@ -421,7 +421,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'DELETE',
-        description: `Deleted ${ ids.length } Job(s)`,
+        description: 'Deleted ' + ids.length + ' Jobs',
         previousData: deletedJobs // Store array of jobs to restore
       };
 
@@ -450,7 +450,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         id: generateId(),
         timestamp: Date.now(),
         type: 'IMPORT',
-        description: `Imported ${ numberedNewJobs.length } Jobs`,
+        description: 'Imported ' + numberedNewJobs.length + ' Jobs',
         currentDataId: numberedNewJobs.map(j => j.id) // Track IDs to potentially undo import
       };
 
@@ -810,8 +810,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       syncPush: async () => {
         // PUSH: Local -> Cloud
         if (!isSupabaseConfigured) {
-           console.log("☁️ Cloud Push Skipped: No API Keys");
-           return;
+          console.log("☁️ Cloud Push Skipped: No API Keys");
+          return;
         }
         console.log("☁️ STARTING PUSH SYNC...");
         try {
@@ -989,12 +989,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             prepaidQuotas: (fetchedSettings as any).prepaidQuotas || prev.prepaidQuotas // Restore quotas
           }));
 
-          console.log(`✅ Pulled ${ mappedJobs.length } jobs and ${ mappedSchedules.length } schedules!`);
-          // alert(`Success: Pulled ${ mappedJobs.length } jobs and ${ mappedSchedules.length } schedules!`);
+          console.log('✅ Pulled ' + mappedJobs.length + ' jobs and ' + mappedSchedules.length + ' schedules!');
 
         } catch (err: any) {
           console.error("❌ PULL FAILED:", err);
-          // alert(`Sync Failed: ${ err.message } `);
         }
       },
       clearCloudData: async () => {
@@ -1010,7 +1008,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           alert("Success: All data deleted from Cloud!");
         } catch (err: any) {
           console.error("❌ CLEAR FAILED:", err);
-          alert(`Clear Failed: ${ err.message } `);
+          alert('Clear Failed: ' + err.message);
         }
       }
     }}>
