@@ -88,16 +88,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           });
         }
 
+        // Parse focusDateRange if it exists
+        let restoredDateRange = parsed.focusDateRange;
+        if (restoredDateRange && restoredDateRange.start && restoredDateRange.end) {
+          restoredDateRange = {
+            start: new Date(restoredDateRange.start),
+            end: new Date(restoredDateRange.end)
+          };
+        }
+
         console.log("🔄 REFRESH: Loaded from Storage", {
           jobsCount: jobs.length,
           viewMode: parsed.viewMode,
-          dateRange: parsed.focusDateRange
+          dateRange: restoredDateRange
         });
 
         setState(prev => ({
           ...defaultState,
           ...parsed,
           jobs: jobs, // Use patched jobs
+          focusDateRange: restoredDateRange, // Use parsed dates
           version: APP_VERSION, // Always force current code version
           // Merge nested objects to prevent data loss on new fields
           pricingData: parsed.pricingData || DEFAULT_PRICING_DATA,
